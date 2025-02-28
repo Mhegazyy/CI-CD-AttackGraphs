@@ -1,0 +1,48 @@
+{
+    "nodes": [
+      {
+        "id": "1",
+        "name": "Web Server",
+        "type": "server",
+        "ip": "192.168.1.10",
+        "vulnerabilities": [
+          {
+            "id": "CVE-2021-12345",
+            "severity": "high"
+          }
+        ]
+      },
+      {
+        "id": "2",
+        "name": "Database Server",
+        "type": "server",
+        "ip": "192.168.1.20",
+        "vulnerabilities": []
+      },
+      {
+        "id": "3",
+        "name": "Internal Workstation",
+        "type": "workstation",
+        "ip": "192.168.1.30",
+        "vulnerabilities": [
+          {
+            "id": "CVE-2020-54321",
+            "severity": "medium"
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "source": "1",
+        "target": "2",
+        "connection": "TCP"
+      },
+      {
+        "source": "3",
+        "target": "1",
+        "connection": "TCP"
+      }
+    ]
+  }
+  
