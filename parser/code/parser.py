@@ -55,7 +55,7 @@ class InputParser:
 
 if __name__ == '__main__':
     # Example usage:
-    parser = InputParser("../input\ samples/sample.json")
+    parser = InputParser("sample.json")
     try:
         parser.load_input()
         data = parser.get_data()
