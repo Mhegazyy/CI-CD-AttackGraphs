@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 
 # Configure logging for clear output during parsing.
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -55,7 +56,7 @@ class InputParser:
 
 if __name__ == '__main__':
     # Example usage:
-    parser = InputParser("/parser/input_samples/sample.json")
+    parser = InputParser("json_parser/input samples/sample.json")
     try:
         parser.load_input()
         data = parser.get_data()
@@ -63,3 +64,4 @@ if __name__ == '__main__':
         logging.info(data)
     except Exception as e:
         logging.error(f"Parser failed: {e}")
+        print("Current working directory:", os.getcwd())
