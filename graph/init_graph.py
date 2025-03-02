@@ -2,16 +2,21 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import os
 import sys
+
+# Dynamically add the project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
-from json_parser.code.parser import InputParser
 
+from json_parser.code.parser import InputParser  # Adjust if your package name/folder differs
 
 def generate_attack_graph(data):
-    # Create a directed graph. You can change to nx.Graph() for an undirected graph if needed.
+    """
+    Creates a directed graph from the JSON data.
+    Each node represents an asset; each edge represents a connection.
+    """
     graph = nx.DiGraph()
 
-    # Add nodes to the graph
+    # Add nodes with attributes
     for node in data["nodes"]:
         graph.add_node(
             node["id"],
@@ -21,7 +26,7 @@ def generate_attack_graph(data):
             vulnerabilities=node.get("vulnerabilities", [])
         )
     
-    # Add edges to the graph
+    # Add edges with attributes
     for edge in data["edges"]:
         graph.add_edge(
             edge["source"],
@@ -32,8 +37,9 @@ def generate_attack_graph(data):
     return graph
 
 if __name__ == '__main__':
-    # Assuming your InputParser is already defined and working
-    parser = InputParser("json_parser/input samples/sample.json")
+    json_file_path = "json_parser/input samples/sample.json"
+
+    parser = InputParser(json_file_path)
     try:
         parser.load_input()
         data = parser.get_data()
@@ -43,11 +49,31 @@ if __name__ == '__main__':
         print("Graph Nodes:", attack_graph.nodes(data=True))
         print("Graph Edges:", attack_graph.edges(data=True))
         
-        # Optionally, draw the graph for a quick visualization (static image)
-        pos = nx.spring_layout(attack_graph)
-        nx.draw(attack_graph, pos, with_labels=True, node_color='lightblue', edge_color='gray')
-        labels = nx.get_edge_attributes(attack_graph, 'connection')
-        nx.draw_networkx_edge_labels(attack_graph, pos, edge_labels=labels)
+        # Generate a layout for node positioning
+        pos = nx.spring_layout(attack_graph, k=0.25)  # Adjust 'k' to spread out the nodes
+
+        # Draw the basic graph without default labels
+        nx.draw(
+            attack_graph,
+            pos,
+            with_labels=False,
+            node_color='lightblue',
+            edge_color='gray',
+            node_size=800
+        )
+        
+        # Build custom labels to show 'name' and 'ip'
+        node_labels = {
+            node: f"{attack_graph.nodes[node]['name']}\n{attack_graph.nodes[node]['ip']}"
+            for node in attack_graph.nodes()
+        }
+        nx.draw_networkx_labels(attack_graph, pos, labels=node_labels, font_size=8)
+
+        # Draw edge labels for 'connection'
+        edge_labels = nx.get_edge_attributes(attack_graph, 'connection')
+        nx.draw_networkx_edge_labels(attack_graph, pos, edge_labels=edge_labels, font_size=8)
+        
+        plt.title("Attack Graph (Network Topology)")
         plt.show()
         
     except Exception as e:
