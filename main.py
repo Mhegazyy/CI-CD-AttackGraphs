@@ -2,8 +2,8 @@ import os
 import subprocess
 import shutil
 from scanner.semgrep_runner import run_semgrep
-# from scanner.ast_analyzer import analyze_code
-# from scanner.graph_builder import build_attack_graph
+from scanner.ast_analyzer import analyze_code
+from scanner.graph_builder import build_attack_graph
 
 def scan_repository(repo_url):
     repo_name = repo_url.split('/')[-1].replace('.git', '')
@@ -24,13 +24,13 @@ def scan_repository(repo_url):
     semgrep_results = run_semgrep(clone_dir=clone_dir)
     
     # Analyze code structure using AST
-    # code_relationships = analyze_code(clone_dir)
+    code_relationships = analyze_code(clone_dir)
     
     # Build attack graph
-    # attack_graph = build_attack_graph(semgrep_results, code_relationships)
+    attack_graph = build_attack_graph(semgrep_results, code_relationships)
     
     # For now, just print the attack graph.
-    # print(f"Attack graph for {repo_url}:")
-    # print(attack_graph)
+    print(f"Attack graph for {repo_url}:")
+    print(attack_graph)
     
     # TODO: Save scan results to the database
