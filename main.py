@@ -54,7 +54,7 @@ def update_repo(local_path):
         raise Exception(f"Failed to update repository at {local_path}: {result.stderr}")
     return result.stdout
 
-def full_scan_process(repo_id):
+def scan_repository(repo_id):
     session = Session()
     # Retrieve the repository from the database
     repo = session.query(Repository).get(repo_id)
@@ -86,7 +86,7 @@ def full_scan_process(repo_id):
     # Persist the scan and AI analysis in the database
     new_scan = Scan(
         repo_id=repo.id,
-        timestamp=datetime.datetime.utcnow(),
+        timestamp=datetime.datetime.now(),
         scan_results={"attack_graph": attack_graph, "ai_assessment": ai_result}
     )
     session.add(new_scan)
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     # For testing, pass a repository id (ensure it exists in your database)
     test_repo_id = 3  # Update this as needed
     try:
-        result = full_scan_process(test_repo_id)
+        result = scan_repository(test_repo_id)
         print("AI Assessment:")
         print(result)
     except Exception as e:

@@ -1,55 +1,76 @@
 import networkx as nx
 
+
+def find_matching_node_id(G, short_name):
+    """
+    Look for a node in G whose ID ends with ":" + short_name.
+    Returns the full node ID if found, otherwise None.
+    """
+    for node in G.nodes():
+        if node == short_name or node.endswith(":" + short_name):
+            return node
+    return None
+
 def build_attack_graph(semgrep_results, ast_data):
     """
-    Build an attack graph by merging Semgrep vulnerability data with function call relationships.
+    Build an improved attack graph that integrates vulnerability information from Semgrep
+    directly into function nodes and normalizes function nodes to avoid duplicates.
     
     Args:
-        semgrep_results (dict): Parsed JSON output from Semgrep.
-        ast_data (dict): Output from the AST analyzer with 'functions' and 'calls'.
+        semgrep_results (dict): Vulnerability results from Semgrep.
+        ast_data (dict): AST analysis output containing function definitions and call relationships.
     
     Returns:
         dict: A node-link representation of the attack graph.
     """
     G = nx.DiGraph()
-    
-    # Add nodes for each function extracted from the AST analysis.
-    # Use the full_name as the node identifier.
+
+    # 1. Create function nodes from AST analysis.
     for func in ast_data.get("functions", []):
-        node_id = func.full_name()  # Using the full name method of FunctionInfo
+        node_id = func.full_name()  # e.g. "clones/dvpwa/sqli/services/db.py:setup_database"
         G.add_node(node_id, 
                    type="function",
-                   name=func.name,
+                   label=func.name,
                    filepath=func.filepath,
                    lineno=func.lineno,
-                   class_name=func.class_name)
-    
-    # Add edges based on call relationships from the AST analysis.
+                   class_name=func.class_name,
+                   vulnerabilities=[],   # list to store vulnerability messages
+                   vulnerable=False)     # flag to mark if this function is vulnerable
+
+    # 2. Add call edges (normalize names if necessary).
     for caller, callee in ast_data.get("calls", []):
-        # Add an edge only if both caller and callee exist in the graph.
-        if caller in G and callee in G:
-            G.add_edge(caller, callee, type="calls")
-        else:
-            # Optionally, add nodes for external calls or simply log the missing information.
-            G.add_edge(caller, callee, type="calls (external?)")
-    
-    # Now, overlay vulnerability information from Semgrep.
+        # Normalize caller
+        if caller not in G:
+            match = find_matching_node_id(G, caller)
+            if match:
+                caller = match
+        # Normalize callee
+        if callee not in G:
+            match = find_matching_node_id(G, callee)
+            if match:
+                callee = match
+
+        # If still missing, consider them external.
+        if caller not in G:
+            G.add_node(caller, type="external_function", label=caller)
+        if callee not in G:
+            G.add_node(callee, type="external_function", label=callee)
+
+        G.add_edge(caller, callee, type="calls")
+
+    # 3. Integrate vulnerability information from Semgrep.
     vulnerabilities = semgrep_results.get("results", [])
     for vuln in vulnerabilities:
         file_path = vuln.get("path")
         message = vuln.get("extra", {}).get("message", "vulnerability")
-        vuln_node = f"{file_path}:vuln"
-        
-        # Add a vulnerability node.
-        G.add_node(vuln_node, type="vulnerability", message=message)
-        
-        # Connect the vulnerability node to all function nodes defined in the same file.
-        for func in ast_data.get("functions", []):
-            if func.filepath == file_path:
-                func_node = func.full_name()
-                G.add_edge(func_node, vuln_node, type="vulnerability")
-    
+        # For each function node that belongs to the same file, attach the vulnerability message.
+        for node, data in G.nodes(data=True):
+            if data.get("type") == "function" and data.get("filepath") == file_path:
+                data["vulnerabilities"].append(message)
+                data["vulnerable"] = True  # Mark the function as vulnerable
+
     return nx.node_link_data(G)
+
 
 if __name__ == "__main__":
     # Dummy data for testing: Replace with real semgrep and ast output.
@@ -62,7 +83,7 @@ if __name__ == "__main__":
     }
     # Assume ast_data is the output from your updated analyze_code() that provides FunctionInfo objects and calls.
     from ast_analyzer import analyze_code
-    ast_data = analyze_code("path/to/your/codebase")
+    ast_data = analyze_code("clones/dvpwa")
     
     graph = build_attack_graph(dummy_semgrep_results, ast_data)
     # Print the graph structure.

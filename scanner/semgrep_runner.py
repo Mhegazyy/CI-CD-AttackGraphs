@@ -22,5 +22,5 @@ def run_semgrep(clone_dir="."):
 
 if __name__ == "__main__":
     # Test the function by scanning the current directory
-    results = run_semgrep(".")
+    results = run_semgrep("clones/dvpwa")
     print(json.dumps(results, indent=4))
