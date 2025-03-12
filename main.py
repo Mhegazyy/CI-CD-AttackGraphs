@@ -3,10 +3,10 @@ import subprocess
 import shutil
 import datetime
 from models import Session, Scan, Repository
-from scanner.semgrep_runner import run_semgrep
 from scanner.ast_analyzer import analyze_code
 from scanner.graph_builder import build_attack_graph
 from scanner.ai_impact import generate_ai_assessment
+from scanner.semgrep_runner import run_semgrep
 
 
 def clone_repo(repo_url, base_dir="clones"):

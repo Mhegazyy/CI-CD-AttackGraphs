@@ -37,18 +37,58 @@ def generate_ai_assessment(attack_graph):
         attack_graph (dict): The node-link data representing the attack graph.
     
     Returns:
-        dict: AI analysis results including impact assessment.
+        dict: AI analysis results including per-function analysis, overall risk assessment, and critical attack paths.
     """
     prompt = (
-        "1. Assess the overall impact of the vulnerabilities.\n"
-        "2. Identify the most critical vulnerability chains.\n"
-        "3. Describe the potential attack paths an adversary could exploit.\n\n"
-        "Provide your analysis strictly in the following JSON format:\n"
+        "You are a cybersecurity risk assessor. You are provided with an attack graph that represents the application's architecture. "
+        "Each node in the graph corresponds to a function in the application, and contains metadata including its identifier, file path, "
+        "line numbers, and, if applicable, a list of vulnerability objects. Each vulnerability object includes details such as:\n"
+        "  - message: a brief description,\n"
+        "  - severity: e.g. High, Medium, Low,\n"
+        "  - likelihood: the chance that the vulnerability will be exploited,\n"
+        "  - impact: the potential harm if exploited,\n"
+        "  - confidence: the confidence in the finding,\n"
+        "  - vulnerability_class: a list of vulnerability classifications.\n\n"
+        "Your tasks are:\n"
+        "1. For each function node, provide a detailed risk and impact analysis. For each function, include:\n"
+        "   - function_id: the node identifier,\n"
+        "   - risk_rating: High, Medium, or Low (based on its vulnerabilities),\n"
+        "   - impact_rating: High, Medium, or Low,\n"
+        "   - vulnerabilities: a list of all associated vulnerabilities with their detailed metadata,\n"
+        "   - recommendation: mitigation recommendations if vulnerabilities are present.\n\n"
+        "2. Provide an overall risk and impact assessment for the entire application, summarizing aggregated risks and key concerns.\n\n"
+        "3. Identify the most critical attack paths in the application. An attack path is defined as a sequence of function calls, starting "
+        "from an entry point and leading to functions with high-risk vulnerabilities. List each attack path as an array of function node IDs.\n\n"
+        "Return your answer strictly in JSON format using the following structure:\n"
         "{\n"
-        "  \"impact_assessment\": \"<summary of impact>\",\n"
-        "  \"attack_paths\": [[\"node_id1\", \"node_id2\", ...], ...]\n"
+        "  \"functions_analysis\": [\n"
+        "    {\n"
+        "      \"function_id\": \"<function node id>\",\n"
+        "      \"risk_rating\": \"<High/Medium/Low>\",\n"
+        "      \"impact_rating\": \"<High/Medium/Low>\",\n"
+        "      \"vulnerabilities\": [\n"
+        "         {\n"
+        "           \"message\": \"<vulnerability description>\",\n"
+        "           \"severity\": \"<severity>\",\n"
+        "           \"likelihood\": \"<likelihood>\",\n"
+        "           \"impact\": \"<impact>\",\n"
+        "           \"confidence\": \"<confidence>\",\n"
+        "           \"vulnerability_class\": [\"<class1>\", \"<class2>\", ...]\n"
+        "         },\n"
+        "         ...\n"
+        "      ],\n"
+        "      \"recommendation\": \"<mitigation recommendations>\"\n"
+        "    },\n"
+        "    ...\n"
+        "  ],\n"
+        "  \"overall_risk\": \"<summary of overall risk and impact>\",\n"
+        "  \"critical_attack_paths\": [\n"
+        "    [\"<function_node_id1>\", \"<function_node_id2>\", ...],\n"
+        "    ...\n"
+        "  ]\n"
         "}\n\n"
-        f"Attack Graph Data:\n{json.dumps(attack_graph, indent=2)}\n\n"
+        "Below is the attack graph data in JSON format:\n"
+        f"{json.dumps(attack_graph, indent=2)}\n\n"
         "JSON Response:\n"
     )
 
@@ -56,8 +96,8 @@ def generate_ai_assessment(attack_graph):
         print("🔍 Sending request to OpenAI API with prompt:")
         print(prompt)
         response = client.responses.create(
-            model="o3-mini",  # Ensure you have access to this model
-            instructions="You are a cybersecurity expert tasked with analyzing attack graph data.",
+            model="o3-mini",  # Ensure you have access to this model; otherwise, switch to an available one.
+            instructions="You are a cybersecurity expert tasked with analyzing an attack graph. Analyze function-level vulnerabilities, overall risk, and critical attack paths based on the provided data.",
             input=prompt
         )
     except Exception as e:

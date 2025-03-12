@@ -2,19 +2,21 @@ import ast
 import os
 
 class FunctionInfo:
-    def __init__(self, name, lineno, filepath, class_name=None):
+    def __init__(self, name, lineno, end_lineno, filepath, class_name=None):
         self.name = name
         self.lineno = lineno
+        self.end_lineno = end_lineno  # new attribute
         self.filepath = filepath
         self.class_name = class_name
 
     def full_name(self):
         if self.class_name:
             return f"{self.filepath}:{self.class_name}.{self.name}"
-        return f"{self.filepath}:{self.name}"
+        else:
+            return f"{self.filepath}:{self.name}"
 
     def __repr__(self):
-        return f"<Function {self.full_name()} at line {self.lineno}>"
+        return f"<Function {self.full_name()} from line {self.lineno} to {self.end_lineno}>"
 
 class CallGraphAnalyzer(ast.NodeVisitor):
     def __init__(self, filepath):
@@ -31,9 +33,12 @@ class CallGraphAnalyzer(ast.NodeVisitor):
         self.class_context = previous_class
 
     def visit_FunctionDef(self, node):
+        # Use node.end_lineno if available, else fallback to node.lineno (if not, you might need additional logic)
+        end_lineno = getattr(node, 'end_lineno', node.lineno)
         func = FunctionInfo(
             name=node.name,
             lineno=node.lineno,
+            end_lineno=end_lineno,   # Record the end line
             filepath=self.filepath,
             class_name=self.class_context
         )
