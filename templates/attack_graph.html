@@ -3,28 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <title>Attack Graph Visualization</title>
-  <!-- Load Cytoscape and extensions with pinned versions -->
+  <!-- Load Cytoscape and extensions -->
   <script src="https://unpkg.com/cytoscape@3.23.0/dist/cytoscape.min.js"></script>
-  <script src="https://unpkg.com/cytoscape-cose-bilkent@4.0.0/cytoscape-cose-bilkent.js"></script>
+  <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://unpkg.com/cytoscape-dagre@2.3.2/cytoscape-dagre.js"></script>
   <script src="https://unpkg.com/popper.js@1.16.1/dist/umd/popper.min.js"></script>
-  <script src="https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js"></script>
+  <script src="https://unpkg.com/tippy.js@6.3.7/dist/tippy-bundle.umd.min.js"></script> <!-- Corrected Tippy.js URL -->
   <script src="https://unpkg.com/cytoscape-popper@1.0.7/cytoscape-popper.js"></script>
+
   <style>
     #cy {
       width: 100%;
       height: 600px;
       border: 1px solid #ccc;
     }
+    .tippy-box {
+      background-color: white;
+      border: 1px solid black;
+      padding: 5px;
+      font-size: 12px;
+      text-align: left;
+    }
   </style>
 </head>
 <body>
   <h1>Attack Graph Visualization</h1>
   <div id="cy"></div>
-  <script>
-    // Ensure cytoscape-cose-bilkent is registered
-    cytoscape.use(cytoscapeCoseBilkent);
 
-    // Fetch the latest scan results for repository with ID 1
+  <script>
+    cytoscape.use(cytoscapeDagre); // Ensure Dagre layout is registered
+
     fetch('/scan/3/latest')
       .then(response => response.json())
       .then(data => {
@@ -32,112 +40,151 @@
           document.getElementById('cy').innerHTML = "<p>No attack graph available.</p>";
           return;
         }
-        
-        // Convert node-link data to Cytoscape elements
-        const elements = [];
-        data.attack_graph.nodes.forEach(node => {
-          // Store additional info (as JSON string) for tooltip display
+
+        let nodes = data.attack_graph.nodes;
+        let links = data.attack_graph.links;
+        let elements = [];
+
+        nodes.forEach(node => {
           elements.push({
-            data: {
-              id: node.id,
-              label: node.label || node.name || node.id,
-              type: node.type,
-              info: JSON.stringify(node)
-            }
-          });
-        });
-        data.attack_graph.links.forEach(link => {
-          elements.push({
-            data: {
-              id: link.source + "_" + link.target,
-              source: link.source,
-              target: link.target,
-              label: link.type
+            data: { 
+              id: node.id, 
+              label: node.label || node.name || node.id, 
+              vulnerabilities: node.vulnerabilities || [],
+              filepath: node.filepath, 
+              vulnerable: Boolean(node.vulnerable),
+              type: node.type
             }
           });
         });
 
-        // Initialize Cytoscape
+        links.forEach(link => {
+          elements.push({
+            data: { 
+              id: link.source + "_" + link.target, 
+              source: link.source, 
+              target: link.target, 
+              label: link.type,
+              attack_path: Boolean(link.attack_path) 
+            }
+          });
+        });
+
         const cy = cytoscape({
-  container: document.getElementById('cy'),
-  elements: elements,
-  style: [
-    {
-      selector: 'node',
-      style: {
-        'label': 'data(label)',
-        'text-valign': 'center',
-        'text-halign': 'center',
-        'background-color': '#0074D9',
-        'width': '40px',
-        'height': '40px',
-        'color': 'black',  // Black text
-        'font-size': '12px',
-        'border-width': 2,
-        'border-color': '#ccc'
-      }
-    },
-    {
-      // Highlight vulnerable nodes with a red border
-      selector: 'node[vulnerable = "true"], node[vulnerable = true]',
-      style: {
-        'border-color': '#FF4136',
-        'border-width': 4
-      }
-    },
-    {
-      selector: 'edge',
-      style: {
-        'width': 2,
-        'line-color': '#ccc',
-        'target-arrow-color': '#ccc',
-        'target-arrow-shape': 'triangle',
-        'curve-style': 'bezier',
-        'label': 'data(label)',
-        'font-size': '8px',
-        'text-rotation': 'autorotate'
-      }
-    }
-  ],
-  layout: {
-    name: 'cose-bilkent',
-    animate: false
-  }
-});
-
-        
-        // Setup tooltips using cytoscape-popper and tippy.js
-        cy.nodes().forEach(function (node) {
-          const info = node.data('info');
-          if (info) {
-            // Create a dummy DOM element to anchor tippy
-            let dummyDomEle = document.createElement('div');
-            dummyDomEle.style.background = 'white';
-            dummyDomEle.style.border = '1px solid #ccc';
-            dummyDomEle.style.padding = '5px';
-            dummyDomEle.innerHTML = `<pre>${info}</pre>`;
-            
-            // Create a tippy tooltip anchored to the node's popper
-            let tip = tippy(dummyDomEle, {
-              getReferenceClientRect: node.popperRef().getBoundingClientRect,
-              trigger: 'manual', // We'll show/hide on events
-              arrow: true,
-              placement: 'top',
-              interactive: true
-            });
-            // Attach the tippy instance to the node for later access
-            node.data('tippy', tip);
-            
-            // Show the tooltip on mouseover and hide on mouseout
-            node.on('mouseover', function() {
-              tip.show();
-            });
-            node.on('mouseout', function() {
-              tip.hide();
-            });
+          container: document.getElementById('cy'),
+          elements: elements,
+          style: [
+            {
+              selector: 'node',
+              style: {
+                'label': 'data(label)',
+                'text-valign': 'center',
+                'text-halign': 'center',
+                'background-color': '#0074D9',
+                'width': '40px',
+                'height': '40px',
+                'color': 'black',
+                'font-size': '12px',
+                'border-width': 2,
+                'border-color': '#ccc'
+              }
+            },
+            {
+              selector: 'node[type="function"][vulnerable]',
+              style: {
+                'border-color': '#FF4136',
+                'border-width': 4
+              }
+            },
+            {
+              selector: 'node[type="vulnerability"]',
+              style: {
+                'shape': 'diamond',
+                'background-color': '#FF4136',
+                'label': 'data(label)',
+                'font-size': '10px',
+                'color': 'black'
+              }
+            },
+            {
+              selector: 'edge',
+              style: {
+                'width': 2,
+                'line-color': '#ccc',
+                'target-arrow-color': '#ccc',
+                'target-arrow-shape': 'triangle',
+                'curve-style': 'bezier',
+                'label': 'data(label)',
+                'font-size': '8px',
+                'text-rotation': 'autorotate'
+              }
+            },
+            {
+              selector: 'edge[attack_path]',
+              style: {
+                'width': 4,
+                'line-color': '#FF0000',
+                'target-arrow-color': '#FF0000',
+                'target-arrow-shape': 'triangle',
+                'curve-style': 'bezier'
+              }
+            },
+            {
+              selector: 'edge[type="has_vulnerability"]',
+              style: {
+                'width': 3,
+                'line-color': '#FF4136',
+                'target-arrow-color': '#FF4136',
+                'target-arrow-shape': 'triangle',
+                'curve-style': 'bezier'
+              }
+            }
+          ],
+          layout: {
+            name: 'dagre', 
+            rankDir: 'TB', 
+            nodeSep: 50,
+            edgeSep: 30,
+            rankSep: 75
           }
         });
-        
+
+        // Fixing the tooltips
+        cy.nodes().forEach(function (node) {
+          let content = `<strong>${node.data('label')}</strong><br>`;
+          content += `<strong>File:</strong> ${node.data('filepath')}<br>`;
+          
+          if (node.data('vulnerabilities') && node.data('vulnerabilities').length > 0) {
+            content += `<strong>Vulnerabilities:</strong><br>`;
+            node.data('vulnerabilities').forEach(vuln => {
+              content += `<em>${vuln.message}</em> (Severity: ${vuln.severity}, Likelihood: ${vuln.likelihood}, Impact: ${vuln.impact})<br>`;
+            });
+          }
+
+          content += `<strong>Calls:</strong><br>`;
+          let connected = node.connectedEdges().filter(edge => edge.data('label') === 'calls');
+          connected.forEach(edge => {
+            content += `${edge.data('target')}<br>`;
+          });
+
+          let ref = node.popperRef(); 
+          let dummyDomEle = document.createElement('div');
+          dummyDomEle.innerHTML = content;
+          dummyDomEle.classList.add('tippy-box');
+
+          tippy(ref, {
+            content: dummyDomEle,
+            allowHTML: true,
+            interactive: true,
+            appendTo: document.body,
+            trigger: 'manual',
+            placement: 'top'
+          });
+
+          node.on('mouseover', () => dummyDomEle._tippy.show());
+          node.on('mouseout', () => dummyDomEle._tippy.hide());
+        });
+
       })
       .catch(error => {
         console.error('Error fetching scan results:', error);

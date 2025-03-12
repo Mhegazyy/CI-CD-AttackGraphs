@@ -1,6 +1,6 @@
 import os
 import networkx as nx
-from semgrep_runner import run_semgrep
+from scanner.semgrep_runner import run_semgrep
 
 def normalize_filepath(filepath):
     """
@@ -26,38 +26,43 @@ def build_attack_graph(semgrep_results, ast_data):
 
     # 1. Create function nodes from AST analysis.
     for func in ast_data.get("functions", []):
-        node_id = func.full_name()
+        node_id = func.full_name()  # e.g. "clones/dvpwa/sqli/services/db.py:setup_database"
         G.add_node(node_id, 
                    type="function",
                    label=func.name,
                    filepath=func.filepath,
                    normalized_filepath=os.path.basename(func.filepath),
                    lineno=func.lineno,
-                   end_lineno=func.end_lineno,   # record end line
+                   end_lineno=func.end_lineno,
                    class_name=func.class_name,
-                   vulnerabilities=[],   
-                   vulnerable=False)
+                   vulnerabilities=[],   # List for vulnerability details
+                   vulnerable=False)     # Flag indicating vulnerability
 
     # 2. Add call edges from AST analysis.
     for caller, callee in ast_data.get("calls", []):
-        # Normalize caller and callee similar to before.
-        if caller not in G:
-            for node in G.nodes():
-                if node.endswith(":" + caller):
-                    caller = node
-                    break
-        if callee not in G:
-            for node in G.nodes():
-                if node.endswith(":" + callee):
-                    callee = node
-                    break
-        if caller not in G:
-            G.add_node(caller, type="external_function", label=caller)
-        if callee not in G:
-            G.add_node(callee, type="external_function", label=callee)
-        G.add_edge(caller, callee, type="calls")
-    
-    # 3. Integrate vulnerability information using line numbers.
+        # Normalize caller and callee using our heuristic (matching by ending substring)
+        norm_caller = caller
+        for node in G.nodes():
+            if node.endswith(":" + caller):
+                norm_caller = node
+                break
+
+        norm_callee = callee
+        for node in G.nodes():
+            if node.endswith(":" + callee):
+                norm_callee = node
+                break
+
+        # If the normalized caller is not in the graph, add it as an external node.
+        if norm_caller not in G:
+            G.add_node(norm_caller, type="external_function", label=norm_caller)
+        # If the normalized callee is not in the graph, add it as an external node.
+        if norm_callee not in G:
+            G.add_node(norm_callee, type="external_function", label=norm_callee)
+
+        G.add_edge(norm_caller, norm_callee, type="calls")
+
+    # 3. Integrate vulnerability information from Semgrep.
     vulnerabilities = semgrep_results.get("results", [])
     for i, vuln in enumerate(vulnerabilities):
         vuln_path = vuln.get("path", "")
@@ -65,44 +70,41 @@ def build_attack_graph(semgrep_results, ast_data):
             continue
         ext = os.path.splitext(vuln_path)[1].lower()
         normalized_vuln_path = os.path.basename(vuln_path)
-        message = vuln.get("extra", {}).get("message", "vulnerability")
-        vuln_start_line = vuln.get("start", {}).get("line")
-        vuln_end_line = vuln.get("end", {}).get("line")
-
-        # For vulnerabilities in code files (e.g., .py), check if they fall within a function's range.
-        if ext == ".py" and vuln_start_line and vuln_end_line:
+        extra = vuln.get("extra", {})
+        vuln_data = {
+            "check_id": vuln.get("check_id"),
+            "message": extra.get("message", "vulnerability"),
+            "severity": extra.get("severity"),
+            "likelihood": extra.get("metadata", {}).get("likelihood"),
+            "impact": extra.get("metadata", {}).get("impact"),
+            "confidence": extra.get("metadata", {}).get("confidence"),
+            "vulnerability_class": extra.get("metadata", {}).get("vulnerability_class")
+        }
+        
+        # For vulnerabilities in Python files, attach them directly to function nodes whose
+        # normalized file matches AND the vulnerability’s reported line numbers fall within the function's boundaries.
+        if ext == ".py":
+            vuln_start = vuln.get("start", {}).get("line")
+            vuln_end = vuln.get("end", {}).get("line")
             for node, data in G.nodes(data=True):
                 if data.get("type") == "function" and data.get("normalized_filepath") == normalized_vuln_path:
-                    # Check if the vulnerability's lines fall within the function's boundaries.
-                    if data.get("lineno") <= vuln_start_line and data.get("end_lineno") >= vuln_end_line:
-                        data["vulnerabilities"].append({
-                            "message": message,
-                            "start": vuln.get("start"),
-                            "end": vuln.get("end"),
-                            "severity": vuln.get("extra", {}).get("severity"),
-                            "likelihood": vuln.get("extra", {}).get("metadata", {}).get("likelihood"),
-                            "impact": vuln.get("extra", {}).get("metadata", {}).get("impact"),
-                            "confidence": vuln.get("extra", {}).get("metadata", {}).get("confidence"),
-                            "vulnerability_class": vuln.get("extra", {}).get("metadata", {}).get("vulnerability_class")
-                        })
+                    if vuln_start and vuln_end:
+                        # Attach if the vulnerability falls within the function's range.
+                        if data.get("lineno") <= vuln_start and data.get("end_lineno") >= vuln_end:
+                            data["vulnerabilities"].append(vuln_data)
+                            data["vulnerable"] = True
+                    else:
+                        # If line numbers aren't available, attach it anyway.
+                        data["vulnerabilities"].append(vuln_data)
                         data["vulnerable"] = True
         else:
-            # For vulnerabilities in non-code files, create a separate node.
+            # For non-code files, create a separate vulnerability node.
             vuln_node_id = f"vuln::{normalized_vuln_path}::{i}"
             G.add_node(vuln_node_id, 
                        type="vulnerability",
                        label=normalized_vuln_path,
                        filepath=vuln_path,
-                       vulnerability_data={
-                           "message": message,
-                           "start": vuln.get("start"),
-                           "end": vuln.get("end"),
-                           "severity": vuln.get("extra", {}).get("severity"),
-                           "likelihood": vuln.get("extra", {}).get("metadata", {}).get("likelihood"),
-                           "impact": vuln.get("extra", {}).get("metadata", {}).get("impact"),
-                           "confidence": vuln.get("extra", {}).get("metadata", {}).get("confidence"),
-                           "vulnerability_class": vuln.get("extra", {}).get("metadata", {}).get("vulnerability_class")
-                       })
+                       vulnerability_data=vuln_data)
             # Link this vulnerability node to function nodes in the same directory.
             vuln_dir = os.path.dirname(vuln_path)
             for node, data in G.nodes(data=True):
@@ -112,6 +114,7 @@ def build_attack_graph(semgrep_results, ast_data):
                         G.add_edge(node, vuln_node_id, type="has_vulnerability")
     
     return nx.node_link_data(G)
+
 
 
 

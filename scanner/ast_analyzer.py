@@ -2,21 +2,23 @@ import ast
 import os
 
 class FunctionInfo:
-    def __init__(self, name, lineno, end_lineno, filepath, class_name=None):
+    def __init__(self, name, lineno, end_lineno, filepath, class_name=None, is_lambda=False):
         self.name = name
         self.lineno = lineno
-        self.end_lineno = end_lineno  # new attribute
+        self.end_lineno = end_lineno  # For Python 3.8+; otherwise fallback to lineno
         self.filepath = filepath
         self.class_name = class_name
+        self.is_lambda = is_lambda
 
     def full_name(self):
+        if self.is_lambda:
+            return f"{self.filepath}:lambda@{self.lineno}"
         if self.class_name:
             return f"{self.filepath}:{self.class_name}.{self.name}"
-        else:
-            return f"{self.filepath}:{self.name}"
+        return f"{self.filepath}:{self.name}"
 
     def __repr__(self):
-        return f"<Function {self.full_name()} from line {self.lineno} to {self.end_lineno}>"
+        return f"<{'Lambda' if self.is_lambda else 'Function'} {self.full_name()} from line {self.lineno} to {self.end_lineno}>"
 
 class CallGraphAnalyzer(ast.NodeVisitor):
     def __init__(self, filepath):
@@ -25,6 +27,7 @@ class CallGraphAnalyzer(ast.NodeVisitor):
         self.functions = []
         self.calls = []
         self.class_context = None
+        self.lambda_counter = 0  # To help generate unique names for lambdas
 
     def visit_ClassDef(self, node):
         previous_class = self.class_context
@@ -33,18 +36,52 @@ class CallGraphAnalyzer(ast.NodeVisitor):
         self.class_context = previous_class
 
     def visit_FunctionDef(self, node):
-        # Use node.end_lineno if available, else fallback to node.lineno (if not, you might need additional logic)
         end_lineno = getattr(node, 'end_lineno', node.lineno)
-        func = FunctionInfo(
+        func_info = FunctionInfo(
             name=node.name,
             lineno=node.lineno,
-            end_lineno=end_lineno,   # Record the end line
+            end_lineno=end_lineno,
             filepath=self.filepath,
             class_name=self.class_context
         )
-        self.functions.append(func)
+        self.functions.append(func_info)
         previous_function = self.current_function
-        self.current_function = func
+        self.current_function = func_info
+        self.generic_visit(node)
+        self.current_function = previous_function
+
+    def visit_AsyncFunctionDef(self, node):
+        end_lineno = getattr(node, 'end_lineno', node.lineno)
+        func_info = FunctionInfo(
+            name=node.name,
+            lineno=node.lineno,
+            end_lineno=end_lineno,
+            filepath=self.filepath,
+            class_name=self.class_context
+        )
+        self.functions.append(func_info)
+        previous_function = self.current_function
+        self.current_function = func_info
+        self.generic_visit(node)
+        self.current_function = previous_function
+
+    def visit_Lambda(self, node):
+        # Generate a synthetic name for the lambda function
+        lambda_name = f"lambda_{self.lambda_counter}"
+        self.lambda_counter += 1
+        end_lineno = getattr(node, 'end_lineno', node.lineno)
+        func_info = FunctionInfo(
+            name=lambda_name,
+            lineno=node.lineno,
+            end_lineno=end_lineno,
+            filepath=self.filepath,
+            class_name=self.class_context,
+            is_lambda=True
+        )
+        self.functions.append(func_info)
+        previous_function = self.current_function
+        self.current_function = func_info
+        # Lambdas are expressions; visit their body if possible
         self.generic_visit(node)
         self.current_function = previous_function
 
@@ -55,7 +92,6 @@ class CallGraphAnalyzer(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _get_callee_name(self, node):
-        # Handle different call types.
         if isinstance(node, ast.Name):
             return node.id
         elif isinstance(node, ast.Attribute):
@@ -65,13 +101,16 @@ class CallGraphAnalyzer(ast.NodeVisitor):
             else:
                 return node.attr
         elif isinstance(node, ast.Call):
-            # In case of chained calls, try to extract the base name.
             return self._get_callee_name(node.func)
         return None
 
 def analyze_file(filepath):
-    with open(filepath, "r", encoding="utf-8") as f:
-        source = f.read()
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            source = f.read()
+    except Exception as e:
+        print(f"Error reading {filepath}: {e}")
+        return {"functions": [], "calls": []}
     try:
         tree = ast.parse(source, filename=filepath)
     except SyntaxError as e:
@@ -92,13 +131,7 @@ def analyze_code(code_path):
                 aggregated["calls"].extend(result["calls"])
     return aggregated
 
-
 if __name__ == "__main__":
-    # Test the updated analyzer on the current directory
-    results = analyze_code(".")
-    print("Functions Found:")
-    for func in results["functions"]:
-        print(func)
-    print("\nCall Relationships (caller -> callee):")
-    for caller, callee in results["calls"]:
-        print(f"{caller} -> {callee}")
+    analysis = analyze_code("clones/dvpwa")
+    from pprint import pprint
+    pprint(analysis)
