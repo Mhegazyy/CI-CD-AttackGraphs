@@ -10,6 +10,7 @@ class Repository(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     repo_url = Column(String, nullable=False)
+    local_path = Column(String)
     branch = Column(String, default="main")
     last_scanned = Column(DateTime)
 
@@ -17,14 +18,13 @@ class Scan(Base):
     __tablename__ = "scans"
     id = Column(Integer, primary_key=True)
     repo_id = Column(Integer, ForeignKey("repositories.id"), nullable=False)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    scan_results = Column(JSON)  # Full JSON output from the scan (e.g., attack graph)
+    timestamp = Column(DateTime, default=datetime.datetime.now)
+    scan_results = Column(JSON)
     repository = relationship("Repository", back_populates="scans")
 
 Repository.scans = relationship("Scan", order_by=Scan.id, back_populates="repository")
 
 # Update the connection string with your PostgreSQL credentials and database name.
-engine = create_engine("postgresql://postgres:root@192.168.1.26/grad")
+engine = create_engine("postgresql://postgres:root@10.0.2.2/grad")
 Base.metadata.create_all(engine)
-
 Session = sessionmaker(bind=engine)
