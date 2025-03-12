@@ -97,7 +97,7 @@ def full_scan_process(repo_id):
 
 if __name__ == "__main__":
     # For testing, pass a repository id (ensure it exists in your database)
-    test_repo_id = 1  # Update this as needed
+    test_repo_id = 3  # Update this as needed
     try:
         result = full_scan_process(test_repo_id)
         print("AI Assessment:")

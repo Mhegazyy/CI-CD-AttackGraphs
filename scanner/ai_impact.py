@@ -1,9 +1,8 @@
-from openai import OpenAI
-
-client = OpenAI(api_key="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")
+import openai
 import json
 
-# Make sure to set your OpenAI API key
+# Set your OpenAI API key (make sure it's valid and has access to the model)
+openai.api_key = "sk-..."
 
 def generate_ai_assessment(attack_graph):
     """
@@ -15,58 +14,77 @@ def generate_ai_assessment(attack_graph):
     Returns:
         dict: AI analysis results including impact assessment and recommended attack paths.
     """
-    # Prepare a prompt with details of the attack graph
     prompt = (
-    "You are a cybersecurity expert. Analyze the following attack graph data "
-    "and determine the impact of the findings. Identify the most critical vulnerability chains and "
-    "describe potential attack paths. Return your answer strictly as JSON with the following format:\n\n"
-    "{\n  \"impact_assessment\": \"<summary>\",\n  \"attack_paths\": [ [\"node_id1\", \"node_id2\", ...], ... ]\n}\n\n"
-    "Attack Graph Data:\n" + json.dumps(attack_graph, indent=2)
-)
-
-
+        "You are a cybersecurity expert. Analyze the following attack graph data and determine the impact of the findings. "
+        "Identify the most critical vulnerability chains and describe potential attack paths an adversary might take. "
+        "Return your answer strictly as JSON with the following format:\n\n"
+        "{\n  \"impact_assessment\": \"<summary>\",\n  \"attack_paths\": [ [\"node_id1\", \"node_id2\", ...], ... ]\n}\n\n"
+        "Attack Graph Data:\n" + json.dumps(attack_graph, indent=2)
+    )
+    
     functions = [
-    {
-        "name": "analyze_attack_graph",
-        "description": "Analyzes the attack graph and returns the impact assessment and recommended attack paths.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "impact_assessment": {
-                    "type": "string",
-                    "description": "A summary of the potential impact of the vulnerabilities."
-                },
-                "attack_paths": {
-                    "type": "array",
-                    "items": {
+        {
+            "name": "analyze_attack_graph",
+            "description": "Analyzes the attack graph and returns the impact assessment and recommended attack paths.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "impact_assessment": {
+                        "type": "string",
+                        "description": "A summary of the potential impact of the vulnerabilities."
+                    },
+                    "attack_paths": {
                         "type": "array",
                         "items": {
-                            "type": "string"
-                        }
-                    },
-                    "description": "A list of potential attack paths, each path represented as a list of node identifiers."
-                }
-            },
-            "required": ["impact_assessment", "attack_paths"]
+                            "type": "array",
+                            "items": {"type": "string"}
+                        },
+                        "description": "A list of potential attack paths, each path represented as a list of node identifiers."
+                    }
+                },
+                "required": ["impact_assessment", "attack_paths"]
+            }
         }
-    }
-]
+    ]
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="o3-mini",
+            messages=[
+                {"role": "system", "content": "You are a cybersecurity risk assessor."},
+                {"role": "user", "content": prompt}
+            ],
+            functions=functions,
+            function_call="auto",
+            max_completion_tokens=500  # Using max_completion_tokens as required
+        )
+    except Exception as e:
+        print("Error during API call:", str(e))
+        return {"impact_assessment": None}
 
-    response = client.chat.completions.create(model="o3-mini",
-    messages=[
-        {"role": "system", "content": "You are a cybersecurity risk assessor."},
-        {"role": "user", "content": prompt}
-    ],
-    functions=functions,
-    function_call="auto",
-    max_tokens=500)   
+    # Convert response to a dictionary if possible.
+    try:
+        response_dict = response.to_dict() if hasattr(response, "to_dict") else response
+    except Exception as e:
+        response_dict = response
 
-    # Extract the AI's answer from the response
-    ai_answer = response.choices[0].message.content
+    # Print raw API response for debugging
+    print("DEBUG: Raw API Response:")
+    print(json.dumps(response_dict, indent=2, default=str))
+    
+    # Extract the message content
+    ai_message = response.choices[0].message
+    ai_answer = ai_message.get("content")
+    
+    if not ai_answer:
+        print("DEBUG: No content returned from API. Full message:")
+        print(ai_message)
+        return {"impact_assessment": None}
+    
     return {"impact_assessment": ai_answer}
 
 if __name__ == "__main__":
-    # For testing purposes: Load or simulate an attack graph
+    # Dummy attack graph for testing purposes
     dummy_attack_graph = {
         "directed": True,
         "multigraph": False,
@@ -79,6 +97,7 @@ if __name__ == "__main__":
             {"source": "example.py:funcA", "target": "example.py:vuln", "type": "vulnerability"}
         ]
     }
+    
     result = generate_ai_assessment(dummy_attack_graph)
     print("AI Impact Assessment:")
-    print(result["impact_assessment"])
+    print(json.dumps(result, indent=2))
