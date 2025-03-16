@@ -2,192 +2,150 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Attack Graph Visualization</title>
-  <!-- Load Cytoscape and extensions -->
-  <script src="https://unpkg.com/cytoscape@3.23.0/dist/cytoscape.min.js"></script>
-  <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
-  <script src="https://unpkg.com/cytoscape-dagre@2.3.2/cytoscape-dagre.js"></script>
-  <script src="https://unpkg.com/popper.js@1.16.1/dist/umd/popper.min.js"></script>
-  <script src="https://unpkg.com/tippy.js@6.3.7/dist/tippy-bundle.umd.min.js"></script> <!-- Corrected Tippy.js URL -->
-  <script src="https://unpkg.com/cytoscape-popper@1.0.7/cytoscape-popper.js"></script>
-
+  <title>Attack Graph with Sigma.js</title>
+  <script src="https://cdn.jsdelivr.net/npm/graphology@0.25.1/dist/graphology.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/graphology-layout-forceatlas2@0.10.1/dist/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sigma@2.4.0/build/sigma.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/2.11.8/umd/popper.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tippy.js/6.3.7/tippy-bundle.umd.min.js"></script>
+    
   <style>
-    #cy {
+    #container {
       width: 100%;
       height: 600px;
       border: 1px solid #ccc;
+      position: relative;
     }
     .tippy-box {
-      background-color: white;
-      border: 1px solid black;
+      background: white;
+      border: 1px solid #333;
       padding: 5px;
       font-size: 12px;
-      text-align: left;
+      max-width: 250px;
     }
   </style>
 </head>
 <body>
-  <h1>Attack Graph Visualization</h1>
-  <div id="cy"></div>
-
+  <h1>Attack Graph Visualization with Sigma.js</h1>
+  <div id="container"></div>
   <script>
-    cytoscape.use(cytoscapeDagre); // Ensure Dagre layout is registered
-
+    // Fetch the attack graph from your endpoint (e.g., /scan/3/latest)
     fetch('/scan/3/latest')
       .then(response => response.json())
       .then(data => {
         if (!data.attack_graph) {
-          document.getElementById('cy').innerHTML = "<p>No attack graph available.</p>";
+          document.getElementById('container').innerHTML = "<p>No attack graph available.</p>";
           return;
         }
 
-        let nodes = data.attack_graph.nodes;
-        let links = data.attack_graph.links;
-        let elements = [];
+        // Prepare the graphology graph:
+        const Graph = graphology;
+        const graph = new Graph();
 
-        nodes.forEach(node => {
-          elements.push({
-            data: { 
-              id: node.id, 
-              label: node.label || node.name || node.id, 
-              vulnerabilities: node.vulnerabilities || [],
-              filepath: node.filepath, 
-              vulnerable: Boolean(node.vulnerable),
-              type: node.type
-            }
+        // Build nodes from the attack graph data:
+        data.attack_graph.nodes.forEach(node => {
+          // Use temporary random positions; we will run a layout
+          graph.addNode(node.id, {
+            label: node.label || node.name || node.id,
+            x: Math.random() * 100,
+            y: Math.random() * 100,
+            size: 10,
+            color: (node.type === "function") ? "#0074D9" : "#FF4136",
+            vulnerable: node.vulnerable,
+            filepath: node.filepath,
+            vulnerabilities: node.vulnerabilities || [],
+            type: node.type
           });
         });
 
-        links.forEach(link => {
-          elements.push({
-            data: { 
-              id: link.source + "_" + link.target, 
-              source: link.source, 
-              target: link.target, 
-              label: link.type,
-              attack_path: Boolean(link.attack_path) 
-            }
+        // Build edges:
+        data.attack_graph.links.forEach(link => {
+          graph.addEdge(link.source, link.target, {
+            label: link.label,
+            color: link.attack_path ? "#FF0000" : "#ccc",
+            size: 1
           });
         });
 
-        const cy = cytoscape({
-          container: document.getElementById('cy'),
-          elements: elements,
-          style: [
-            {
-              selector: 'node',
-              style: {
-                'label': 'data(label)',
-                'text-valign': 'center',
-                'text-halign': 'center',
-                'background-color': '#0074D9',
-                'width': '40px',
-                'height': '40px',
-                'color': 'black',
-                'font-size': '12px',
-                'border-width': 2,
-                'border-color': '#ccc'
-              }
-            },
-            {
-              selector: 'node[type="function"][vulnerable]',
-              style: {
-                'border-color': '#FF4136',
-                'border-width': 4
-              }
-            },
-            {
-              selector: 'node[type="vulnerability"]',
-              style: {
-                'shape': 'diamond',
-                'background-color': '#FF4136',
-                'label': 'data(label)',
-                'font-size': '10px',
-                'color': 'black'
-              }
-            },
-            {
-              selector: 'edge',
-              style: {
-                'width': 2,
-                'line-color': '#ccc',
-                'target-arrow-color': '#ccc',
-                'target-arrow-shape': 'triangle',
-                'curve-style': 'bezier',
-                'label': 'data(label)',
-                'font-size': '8px',
-                'text-rotation': 'autorotate'
-              }
-            },
-            {
-              selector: 'edge[attack_path]',
-              style: {
-                'width': 4,
-                'line-color': '#FF0000',
-                'target-arrow-color': '#FF0000',
-                'target-arrow-shape': 'triangle',
-                'curve-style': 'bezier'
-              }
-            },
-            {
-              selector: 'edge[type="has_vulnerability"]',
-              style: {
-                'width': 3,
-                'line-color': '#FF4136',
-                'target-arrow-color': '#FF4136',
-                'target-arrow-shape': 'triangle',
-                'curve-style': 'bezier'
-              }
-            }
-          ],
-          layout: {
-            name: 'dagre', 
-            rankDir: 'TB', 
-            nodeSep: 50,
-            edgeSep: 30,
-            rankSep: 75
-          }
+        // Apply a layout algorithm:
+        // Option 1: ForceAtlas2 layout (for dynamic, force-directed)
+        sigma.layouts.forceAtlas2.assign(graph, { iterations: 100 });
+        // Option 2: Use dagre layout if preferred:
+        // const dagreLayout = graphologyLayoutDagre;
+        // dagreLayout.assign(graph, { rankDir: 'TB', nodeSep: 50, edgeSep: 30, rankSep: 75 });
+
+        // Initialize Sigma:
+        const container = document.getElementById('container');
+        const renderer = new sigma.Sigma(graph, container, {
+          defaultEdgeColor: '#ccc',
+          defaultNodeColor: '#0074D9'
         });
 
-        // Fixing the tooltips
-        cy.nodes().forEach(function (node) {
-          let content = `<strong>${node.data('label')}</strong><br>`;
-          content += `<strong>File:</strong> ${node.data('filepath')}<br>`;
-          
-          if (node.data('vulnerabilities') && node.data('vulnerabilities').length > 0) {
-            content += `<strong>Vulnerabilities:</strong><br>`;
-            node.data('vulnerabilities').forEach(vuln => {
-              content += `<em>${vuln.message}</em> (Severity: ${vuln.severity}, Likelihood: ${vuln.likelihood}, Impact: ${vuln.impact})<br>`;
+        // Setup tooltips using Tippy.js:
+        // We'll add a mousemove listener to the container and use sigma's getNodeAt to get the hovered node.
+        let currentTooltip = null;
+
+        container.addEventListener('mousemove', (event) => {
+          // Get the node at the current mouse position
+          const nodeId = renderer.getNodeAt(event.clientX, event.clientY);
+          if (nodeId) {
+            // If there is already a tooltip for this node, do nothing.
+            if (currentTooltip && currentTooltip.nodeId === nodeId) return;
+            // Otherwise, if a tooltip is showing for another node, hide it.
+            if (currentTooltip) {
+              currentTooltip.tip.destroy();
+              currentTooltip = null;
+            }
+            // Get node data
+            const nodeData = graph.getNodeAttributes(nodeId);
+            // Build tooltip content:
+            let content = `<strong>${nodeData.label}</strong><br>`;
+            content += `<strong>File:</strong> ${nodeData.filepath}<br>`;
+            if (nodeData.vulnerabilities && nodeData.vulnerabilities.length > 0) {
+              content += `<strong>Vulnerabilities:</strong><br>`;
+              nodeData.vulnerabilities.forEach(vuln => {
+                content += `<em>${vuln.message}</em> (Severity: ${vuln.severity}, Likelihood: ${vuln.likelihood}, Impact: ${vuln.impact})<br>`;
+              });
+            }
+            // Optionally, list out edges (calls) from this node.
+            const outEdges = graph.outEdges(nodeId);
+            if (outEdges.length > 0) {
+              content += `<strong>Calls:</strong><br>`;
+              outEdges.forEach(edgeKey => {
+                const edgeData = graph.getEdgeAttributes(edgeKey);
+                content += `${edgeData.label} -> ${graph.getEdgeSource(edgeKey)}<br>`;
+              });
+            }
+            // Create tooltip with Tippy.js:
+            const tip = tippy(document.body, {
+              content: content,
+              allowHTML: true,
+              interactive: true,
+              placement: 'top',
+              trigger: 'manual',
+              animation: 'scale',
+              theme: 'light-border'
             });
+            tip.show();
+            currentTooltip = { nodeId, tip };
+          } else {
+            if (currentTooltip) {
+              currentTooltip.tip.destroy();
+              currentTooltip = null;
+            }
           }
+        });
 
-          content += `<strong>Calls:</strong><br>`;
-          let connected = node.connectedEdges().filter(edge => edge.data('label') === 'calls');
-          connected.forEach(edge => {
-            content += `${edge.data('target')}<br>`;
-          });
-
-          let ref = node.popperRef(); 
-          let dummyDomEle = document.createElement('div');
-          dummyDomEle.innerHTML = content;
-          dummyDomEle.classList.add('tippy-box');
-
-          tippy(ref, {
-            content: dummyDomEle,
-            allowHTML: true,
-            interactive: true,
-            appendTo: document.body,
-            trigger: 'manual',
-            placement: 'top'
-          });
-
-          node.on('mouseover', () => dummyDomEle._tippy.show());
-          node.on('mouseout', () => dummyDomEle._tippy.hide());
+        container.addEventListener('mouseleave', () => {
+          if (currentTooltip) {
+            currentTooltip.tip.destroy();
+            currentTooltip = null;
+          }
         });
 
       })
       .catch(error => {
-        console.error('Error fetching scan results:', error);
+        console.error("Error fetching scan results:", error);
       });
   </script>
 </body>
