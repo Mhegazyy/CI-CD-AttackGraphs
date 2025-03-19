@@ -1,16 +1,18 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, request, jsonify, render_template, redirect, url_for, send_from_directory
 import threading
 from models import Session, Repository, Scan
 from main import scan_repository  # Ensure scan_repository is correctly defined in main.py
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', template_folder='templates')
 
 @app.route('/')
 def index():
-    session = Session()
-    repos = session.query(Repository).all()
-    session.close()
-    return render_template('index.html', repositories=repos)
+    # Serve the built index.html from static/dist
+    return send_from_directory('static/dist', 'index.html')
+
+@app.route('/<path:filename>')
+def static_proxy(filename):
+    return send_from_directory('static/dist', filename)
 
 @app.route("/dashboard/<int:repo_id>")
 def dashboard(repo_id):

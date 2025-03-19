@@ -120,7 +120,7 @@ def build_attack_graph(semgrep_results, ast_data):
 
 
 if __name__ == "__main__":
-    # Dummy data for testing: Replace with real semgrep and ast output.
+    # Dummy data for testing: Replace with real semgrep and AST output.
     # For example, use your Semgrep module to get vulnerability results,
     # and your updated ast_analyzer to get function definitions and call relationships.
     dummy_semgrep_results = run_semgrep("clones/dvpwa")
@@ -129,6 +129,11 @@ if __name__ == "__main__":
     ast_data = analyze_code("clones/dvpwa")
     
     graph = build_attack_graph(dummy_semgrep_results, ast_data)
-    # Print the graph structure.
+    
+    # Write the attack graph to a file.
     import json
-    print(json.dumps(graph, indent=2))
+    with open("attack_graph.json", "w") as f:
+        json.dump(graph, f, indent=2)
+    
+    print("Attack graph written to attack_graph.json")
+
