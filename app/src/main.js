@@ -1,231 +1,286 @@
 import Graph from 'graphology';
+import forceAtlas2 from 'graphology-layout-forceatlas2';
 import noverlap from 'graphology-layout-noverlap';
+import louvain from 'graphology-communities-louvain';
 import Sigma from 'sigma';
+import { NodeCircleProgram } from 'sigma/rendering';
 import ArrowEdgeProgram from './arrowEdgeProgram';
 
-console.log("Custom arrow edge program:", ArrowEdgeProgram);
-
-
-
-// Create a tooltip element for node hover info.
+// Create a tooltip element for node hover
 const tooltip = document.createElement('div');
-tooltip.style.position = 'absolute';
-tooltip.style.pointerEvents = 'none';
-tooltip.style.display = 'none';
-tooltip.style.background = 'rgba(0, 0, 0, 0.7)';
-tooltip.style.color = '#fff';
-tooltip.style.padding = '5px';
-tooltip.style.borderRadius = '3px';
-tooltip.style.fontSize = '12px';
+Object.assign(tooltip.style, {
+  position: 'absolute',
+  pointerEvents: 'none',
+  display: 'none',
+  background: 'rgba(0, 0, 0, 0.85)',
+  color: '#fff',
+  padding: '8px',
+  borderRadius: '4px',
+  fontSize: '14px',
+  maxWidth: '300px',
+  backdropFilter: 'blur(3px)'
+});
 document.body.appendChild(tooltip);
 
+// A few distinct colors for communities:
+const COMMUNITY_COLORS = [
+  "#FF4136", "#0074D9", "#FF851B", "#2ECC40", "#B10DC9", "#FFDC00", "#001f3f", "#39CCCC",
+  "#85144b", "#3D9970", "#01FF70", "#AAAAAA"
+];
 
-// Fetch the attack graph JSON file (adjust the URL as needed).
+// Helper to pick a color from the array based on community
+function getCommunityColor(community) {
+  // For large graphs with many communities, you might want a bigger palette or a color generator
+  return COMMUNITY_COLORS[community % COMMUNITY_COLORS.length];
+}
+
+// Convert pointer to graph coordinates, then pick node by graph distance
+function pickNodeAtGraphCoords(renderer, graph, pointerGraphPos, threshold = 15) {
+  let pickedNode = null;
+  let minDistance = Infinity;
+  graph.forEachNode((node, attr) => {
+    const dx = attr.x - pointerGraphPos.x;
+    const dy = attr.y - pointerGraphPos.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance < threshold && distance < minDistance) {
+      pickedNode = node;
+      minDistance = distance;
+    }
+  });
+  return pickedNode;
+}
+
 fetch('/scan/3/latest')
   .then(response => response.json())
   .then(data => {
-    console.log("Loaded graph data:", data);
-
-    // Extract the attack graph from the loaded JSON.
-    const graphData = data.attack_graph;
-    if (!graphData || !graphData.nodes) {
-      console.error("Graph data does not have a 'nodes' property:", graphData);
-      return;
-    }
-
-    // Create a new graph instance.
     const graph = new Graph();
-    // Mapping from original node id to deduplicated unique key.
-    const nodeMapping = {};
+    const nodeMap = new Map();
+    const edges = [];
 
-    // Add nodes with deduplication.
-    graphData.nodes.forEach(node => {
-      // For internal function nodes, build a unique key using normalized_filepath (if available) and label.
-      // For external_function nodes, try to merge with an existing function node.
+    // Process nodes
+    const nodes = data.attack_graph.nodes.map(node => {
+      let key, attributes;
+      const x = (node.x !== undefined && !isNaN(node.x)) ? node.x : Math.random() * 100;
+      const y = (node.y !== undefined && !isNaN(node.y)) ? node.y : Math.random() * 100;
+      
+      // We’ll force size=10 for all nodes:
+      const size = 10;
+
+      // For external functions or other classification, we might set different properties, but size is always 10.
       if (node.type === "external_function") {
+        // Attempt to merge with existing function node by label
         const simpleLabel = node.label.split('.').pop();
-        let foundKey = null;
-        graph.forEachNode((key, attr) => {
-          if (attr.nodeType === "function" && attr.label === simpleLabel) {
-            foundKey = key;
+        const foundKey = [...nodeMap.values()].find(k => {
+          try {
+            const label = graph.getNodeAttribute(k, 'label');
+            const nodeCategory = graph.getNodeAttribute(k, 'nodeCategory');
+            return label === simpleLabel && nodeCategory === 'function';
+          } catch (e) {
+            return false;
           }
         });
         if (foundKey) {
-          nodeMapping[node.id] = foundKey;
-          return;
+          key = foundKey;
+          nodeMap.set(node.id, key);
+          return { key, attributes: {} };
         } else {
-          const uniqueKey = node.id;
-          graph.addNode(uniqueKey, {
-            label: node.label,
-            x: (node.x !== undefined) ? node.x : Math.random() * 100,
-            y: (node.y !== undefined) ? node.y : Math.random() * 100,
-            size: (node.size !== undefined) ? node.size : 10,
-            color: "#ccc", // default color for external functions
-            vulnerable: node.vulnerable,
-            filepath: node.filepath,
-            vulnerabilities: node.vulnerabilities,
-            nodeType: node.type,
-            lineno: node.lineno,
-            end_lineno: node.end_lineno,
-            class_name: node.class_name,
-            normalized_filepath: node.normalized_filepath
-          });
-          nodeMapping[node.id] = uniqueKey;
-          return;
+          key = node.id;
+          attributes = {
+            ...node,
+            x, y,
+            color: "#666",   // default color for external (will be overridden by community color)
+            size,
+            nodeCategory: node.type,
+            type: "nodeCircle"
+          };
         }
-      }
-
-      // For function (or other) nodes.
-      const uniqueKey = node.normalized_filepath ? `${node.normalized_filepath}:${node.label}` : node.id;
-
-      if (!graph.hasNode(uniqueKey)) {
-        const x = (node.x !== undefined) ? node.x : Math.random() * 100;
-        const y = (node.y !== undefined) ? node.y : Math.random() * 100;
-        const size = (node.size !== undefined) ? node.size : 10;
-        let color = "#0074D9"; // default blue for functions
-        if (node.type === "function") {
-          color = node.vulnerable ? "#FF4136" : "#0074D9";
-        }
-        if (node.type === "vulnerability") {
-          color = "#FFA500"; // orange for vulnerabilities
-        }
-        graph.addNode(uniqueKey, {
-          label: node.label,
-          x: x,
-          y: y,
-          size: size,
-          color: color,
-          vulnerable: node.vulnerable,
-          filepath: node.filepath,
-          vulnerabilities: node.vulnerabilities,
-          nodeType: node.type,
-          lineno: node.lineno,
-          end_lineno: node.end_lineno,
-          class_name: node.class_name,
-          normalized_filepath: node.normalized_filepath
-        });
       } else {
-        if (node.vulnerable && !graph.getNodeAttribute(uniqueKey, 'vulnerable')) {
-          graph.setNodeAttribute(uniqueKey, 'vulnerable', true);
-          graph.setNodeAttribute(uniqueKey, 'color', "#FF4136");
-          const currVuls = graph.getNodeAttribute(uniqueKey, 'vulnerabilities') || [];
-          graph.setNodeAttribute(uniqueKey, 'vulnerabilities', currVuls.concat(node.vulnerabilities || []));
-        }
+        key = node.normalized_filepath ? `${node.normalized_filepath}:${node.label}` : node.id;
+        attributes = {
+          ...node,
+          x, y,
+          color: "#0074D9", // default color (overridden by community color)
+          size,
+          nodeCategory: node.type,
+          type: "nodeCircle"
+        };
       }
-      nodeMapping[node.id] = uniqueKey;
+
+      nodeMap.set(node.id, key);
+      return { key, attributes };
+    }).filter(n => n.attributes && Object.keys(n.attributes).length > 0);
+
+    // Process edges with semi-transparent colors
+    data.attack_graph.links?.forEach(link => {
+      const source = nodeMap.get(link.source);
+      const target = nodeMap.get(link.target);
+      if (source && target && !graph.hasEdge(source, target)) {
+        edges.push({
+          source,
+          target,
+          attributes: {
+            type: "arrow",
+            // Attack path => red, else semi-transparent gray
+            color: link.attack_path ? "rgba(255,0,0,0.6)" : "rgba(59, 59, 59, 0.69)",
+            size: 2,
+            arrowSize: 8
+          }
+        });
+      }
     });
 
-    // Add edges from the JSON using the deduplication mapping.
-    if (graphData.links) {
-      graphData.links.forEach(link => {
-        const sourceKey = nodeMapping[link.source];
-        const targetKey = nodeMapping[link.target];
-        // Only add the edge if both nodes exist.
-        if (graph.hasNode(sourceKey) && graph.hasNode(targetKey)) {
-          // Check if an edge already exists between these two nodes.
-          if (!graph.hasEdge(sourceKey, targetKey)) {
-            graph.addEdge(sourceKey, targetKey, {
-              label: link.type, // e.g., "calls"
-              color: "#ccc",
-              arrow: true
-            });
-          }
-        }
-      });
-    } else {
-      console.warn("No links property found in graph data.");
-    }
+    // Import nodes & edges
+    graph.import({
+      nodes: nodes.map(({ key, attributes }) => ({ key, attributes })),
+      edges: edges.map(edge => ({
+        source: edge.source,
+        target: edge.target,
+        attributes: edge.attributes
+      }))
+    });
 
-    // Apply the noverlap layout to adjust node positions.
-    noverlap.assign(graph, { margin: 10 });
+    // 1) Community detection with Louvain
+    const partition = louvain(graph);
+    // Assign a color per community
+    graph.forEachNode(node => {
+      const community = partition[node] || 0;
+      graph.setNodeAttribute(node, 'color', getCommunityColor(community));
+    });
 
-    // Initialize Sigma to render the graph.
+    // 2) ForceAtlas2 layout
+    forceAtlas2.assign(graph, {
+      iterations: 600,
+      settings: {
+        strongGravityMode: true,
+        gravity: 2.0,
+        scalingRatio: 4.0,
+        adjustSizes: true
+      }
+    });
+
+    // 3) No-overlap pass
+    noverlap.assign(graph, { margin: 5, gridSize: 50 });
+
+    // 4) Initialize Sigma
     const container = document.getElementById('container');
+    container.style.touchAction = "none";
     const renderer = new Sigma(graph, container, {
       settings: {
+        edgeProgram: ArrowEdgeProgram,
         defaultEdgeColor: "#ccc",
         defaultNodeColor: "#0074D9",
         labelThreshold: 16,
-        edgeProgram: ArrowEdgeProgram // Your custom edge program here.
+      },
+      nodeProgramClasses: {
+        nodeCircle: NodeCircleProgram
       }
-    });
-    
-    // --- Tooltips on Hover ---
-    renderer.on('enterNode', ({ node }) => {
-      const attr = graph.getNodeAttributes(node);
-      let vulnInfo = "";
-      if (attr.vulnerabilities && attr.vulnerabilities.length > 0) {
-        vulnInfo = "Vulnerabilities: " + attr.vulnerabilities.map(v => v.check_id).join(", ") + "<br>";
-      }
-      tooltip.innerHTML = `<strong>${attr.label}</strong><br>
-                           File: ${attr.filepath || "N/A"}<br>
-                           ${vulnInfo}Line: ${attr.lineno} - ${attr.end_lineno}`;
-      tooltip.style.display = 'block';
     });
 
+    // Enhanced tooltip
+    renderer.on('enterNode', ({ node }) => {
+      const attr = graph.getNodeAttributes(node);
+      const vuls = (attr.vulnerabilities || [])
+        .map(v => `${v.check_id} (${v.severity})`)
+        .join('<br>');
+      tooltip.innerHTML = `
+        <strong>${attr.label}</strong>
+        <div style="margin-top:6px;color:#aaa">
+          ${attr.nodeCategory === 'external' ? 'External' : 'Internal'} ${attr.nodeCategory}
+        </div>
+        ${attr.filepath ? `<div>📄 ${attr.filepath}</div>` : ''}
+        ${attr.lineno ? `<div>📏 Lines ${attr.lineno}-${attr.end_lineno}</div>` : ''}
+        ${vuls ? `<div style="margin-top:8px;color:${attr.color}">⚠️ ${vuls}</div>` : ''}
+      `;
+      tooltip.style.display = 'block';
+    });
     renderer.on('leaveNode', () => {
       tooltip.style.display = 'none';
     });
-
     container.addEventListener('mousemove', event => {
       tooltip.style.left = event.pageX + 10 + 'px';
       tooltip.style.top = event.pageY + 10 + 'px';
     });
 
-    // --- Custom Node Dragging Implementation ---
-    let draggedNode = null;
-    let isDragging = false;
-    let pointerDown = false;
-
-    // Helper: Convert viewport (client) coordinates to graph coordinates.
-    function viewportToGraph(event) {
-      const camera = renderer.getCamera();
-      const rect = container.getBoundingClientRect();
-      const viewportX = event.clientX - rect.left;
-      const viewportY = event.clientY - rect.top;
-      const centerX = container.offsetWidth / 2;
-      const centerY = container.offsetHeight / 2;
-      const graphX = camera.x + (viewportX - centerX) / camera.ratio;
-      const graphY = camera.y + (viewportY - centerY) / camera.ratio;
-      return { x: graphX, y: graphY };
-    }
-
+    // 5) Pan or drag logic
+    let dragState = null;
+    let panState = null;
+    // If we pick a node, we drag that node. Otherwise, we pan the camera.
     container.addEventListener('pointerdown', event => {
-      pointerDown = true;
-      const graphCoords = viewportToGraph(event);
-      let closestNode = null;
-      let minDist = Infinity;
-      graph.forEachNode((node, attr) => {
-        const dx = attr.x - graphCoords.x;
-        const dy = attr.y - graphCoords.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < minDist && dist < (attr.size || 10) * 2) {
-          minDist = dist;
-          closestNode = node;
-        }
+      event.preventDefault();
+      const rect = container.getBoundingClientRect();
+      // Convert pointer to graph coords
+      const pointerGraphPos = renderer.viewportToGraph({
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
       });
-      if (closestNode) {
-        draggedNode = closestNode;
-        isDragging = true;
+      // Try picking a node within threshold 15
+      const picked = pickNodeAtGraphCoords(graph, pointerGraphPos, 15);
+      if (picked) {
+        dragState = {
+          node: picked,
+          nodeX: graph.getNodeAttribute(picked, 'x'),
+          nodeY: graph.getNodeAttribute(picked, 'y'),
+          pointerX: pointerGraphPos.x,
+          pointerY: pointerGraphPos.y
+        };
+      } else {
+        // Start camera panning
+        const camera = renderer.getCamera();
+        panState = {
+          cameraX: camera.x,
+          cameraY: camera.y,
+          pointerX: pointerGraphPos.x,
+          pointerY: pointerGraphPos.y
+        };
       }
     });
-
     container.addEventListener('pointermove', event => {
-      if (!pointerDown || !isDragging || !draggedNode) return;
-      const graphCoords = viewportToGraph(event);
-      graph.setNodeAttribute(draggedNode, 'x', graphCoords.x);
-      graph.setNodeAttribute(draggedNode, 'y', graphCoords.y);
-      renderer.refresh();
+      event.preventDefault();
+      const rect = container.getBoundingClientRect();
+      const pointerGraphPos = renderer.viewportToGraph({
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      });
+      if (dragState) {
+        // Node dragging
+        const dx = pointerGraphPos.x - dragState.pointerX;
+        const dy = pointerGraphPos.y - dragState.pointerY;
+        graph.setNodeAttribute(dragState.node, 'x', dragState.nodeX + dx);
+        graph.setNodeAttribute(dragState.node, 'y', dragState.nodeY + dy);
+        renderer.refresh();
+      } else if (panState) {
+        // Camera panning
+        const camera = renderer.getCamera();
+        const dx = pointerGraphPos.x - panState.pointerX;
+        const dy = pointerGraphPos.y - panState.pointerY;
+        camera.setState({
+          x: panState.cameraX - dx,
+          y: panState.cameraY - dy
+        });
+      }
+    });
+    container.addEventListener('pointerup', event => {
+      event.preventDefault();
+      dragState = null;
+      panState = null;
     });
 
-    container.addEventListener('pointerup', () => {
-      pointerDown = false;
-      isDragging = false;
-      draggedNode = null;
-    });
+    // Helper: pick node by graph distance
+    function pickNodeAtGraphCoords(graph, pointer, threshold) {
+      let pickedNode = null;
+      let minDistance = Infinity;
+      graph.forEachNode((node, attr) => {
+        const dx = attr.x - pointer.x;
+        const dy = attr.y - pointer.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < threshold && distance < minDistance) {
+          pickedNode = node;
+          minDistance = distance;
+        }
+      });
+      return pickedNode;
+    }
 
     console.log("Attack graph rendered successfully.");
   })
-  .catch(error => {
-    console.error("Error loading attack graph: ", error);
-  });
+  .catch(console.error);
