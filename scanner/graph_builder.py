@@ -1,6 +1,7 @@
 import os
 import networkx as nx
 from scanner.semgrep_runner import run_semgrep
+from collections import defaultdict
 
 def normalize_filepath(filepath):
     """
