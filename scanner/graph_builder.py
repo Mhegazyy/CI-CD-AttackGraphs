@@ -2,11 +2,12 @@ import os
 import networkx as nx
 from scanner.semgrep_runner import run_semgrep
 from collections import defaultdict
+import json
 
 def normalize_filepath(filepath):
     """
     Return a normalized version of the filepath.
-    Here we use the basename.
+    Here we use the basename. You could extend this to a relative path.
     """
     return os.path.basename(filepath)
 
@@ -56,6 +57,7 @@ def build_attack_graph(semgrep_results, ast_data):
             G.add_node(norm_caller, type="external_function", label=norm_caller)
         if norm_callee not in G:
             G.add_node(norm_callee, type="external_function", label=norm_callee)
+
         G.add_edge(norm_caller, norm_callee, type="calls")
 
     # 3. Integrate vulnerability information from Semgrep.
@@ -102,34 +104,40 @@ def build_attack_graph(semgrep_results, ast_data):
                     func_dir = os.path.dirname(data.get("filepath"))
                     if os.path.normpath(func_dir) == os.path.normpath(vuln_dir):
                         G.add_edge(node, vuln_node_id, type="has_vulnerability")
-    
+
     # 4. Hierarchical grouping: create file nodes for groups of functions.
+    #    Here we group functions by their normalized_filepath.
     file_groups = defaultdict(list)
     for node, data in list(G.nodes(data=True)):
-        # Only process function nodes.
         if data.get("type") == "function":
             file_groups[data.get("normalized_filepath")].append(node)
     
+    # Create a file node for each group (even if there's one function, you might want to group it)
     for file, func_nodes in file_groups.items():
-        if len(func_nodes) > 1:
-            file_node_id = f"file::{file}"
-            file_node = {
-                "id": file_node_id,
-                "label": file,  # You could also use a nicer label.
-                "filepath": file,
-                "type": "file",
-                "children": [],
-                "vulnerabilities": [],
-                "vulnerable": any(G.nodes[n].get("vulnerable") for n in func_nodes)
-            }
-            # Add a link from the file node to each function node.
-            for func_node in func_nodes:
-                # Optionally, you could remove the function node from the top level here.
-                file_node["children"].append(G.nodes[func_node])
-                G.add_edge(file_node_id, func_node, type="has_child")
-            G.add_node(file_node_id, **file_node)
+        file_node_id = f"file::{file}"
+        file_node = {
+            "id": file_node_id,
+            "label": file,
+            "filepath": file,
+            "type": "file",
+            # Instead of embedding the full node dict, store a list of function node IDs.
+            "children": func_nodes,
+            "expanded": False,  # Flag to indicate whether the file node is expanded (for drill-down)
+            "vulnerabilities": [],
+            "vulnerable": any(G.nodes[n].get("vulnerable") for n in func_nodes)
+        }
+        # Create an edge from the file node to each function node
+        for func_node in func_nodes:
+            G.add_edge(file_node_id, func_node, type="has_child")
+        G.add_node(file_node_id, **file_node)
+
+    # 5. Ensure each node has a 'key' property. This is helpful for the frontend.
+    data = nx.node_link_data(G)
+    for node in data.get("nodes", []):
+        if "key" not in node:
+            node["key"] = node.get("id")
     
-    return nx.node_link_data(G)
+    return data
 
 if __name__ == "__main__":
     dummy_semgrep_results = run_semgrep("clones/dvpwa")
@@ -138,7 +146,6 @@ if __name__ == "__main__":
     
     graph = build_attack_graph(dummy_semgrep_results, ast_data)
     
-    import json
     with open("attack_graph.json", "w") as f:
         json.dump(graph, f, indent=2)
     

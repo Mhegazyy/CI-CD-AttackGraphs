@@ -4,11 +4,16 @@ from models import Session, Repository, Scan
 from main import scan_repository  # Ensure scan_repository is correctly defined in main.py
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
+app = Flask(__name__, static_folder='app/src/js', template_folder='templates')
 
 @app.route('/')
 def index():
     # Serve the built index.html from static/dist
     return send_from_directory('static/dist', 'index.html')
+
+@app.route('/app/src/<path:filename>')
+def serve_js(filename):
+    return send_from_directory('app/src', filename)
 
 @app.route('/<path:filename>')
 def static_proxy(filename):

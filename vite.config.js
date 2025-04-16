@@ -1,27 +1,44 @@
 import { resolve } from 'path';
+import { defineConfig } from 'vite';
 
-export default {
-  // Set the root to your templates folder so that index.html is treated as the root entry
+export default defineConfig({
   root: 'templates',
-  base: './', // use relative asset paths
+  base: './',
   build: {
-    // Output to a folder outside of the templates folder.
-    // Using "../static/dist" means that from templates/ folder, the output will go to static/dist at the project root.
     outDir: resolve(__dirname, 'static/dist'),
     emptyOutDir: true,
-    // Do not preserve subfolder structure
     assetsDir: '',
     rollupOptions: {
       input: {
-        // Since root is now templates, we can refer to index.html directly
-        index: resolve(__dirname, 'templates/index.html')
+        index: resolve(__dirname, 'templates/attack_graph.html')
       },
       output: {
-        // Ensure assets are flattened
         entryFileNames: '[name].js',
         chunkFileNames: '[name].js',
         assetFileNames: '[name].[ext]'
       }
     }
+  },
+  resolve: {
+    alias: {
+      // Instead of aliasing to sigma.min.js, alias to the sigma package root.
+      'sigma': resolve(__dirname, 'node_modules/sigma'),
+      // Make sure your Graphology alias is pointing to an ES module build, if needed:
+      'graphology': resolve(__dirname, 'node_modules/graphology/dist/graphology.esm.js')
+    }
+  },
+  optimizeDeps: {
+    include: ['graphology', 'sigma', 'tippy.js']
+  },
+  ssr: {
+    noExternal: ['graphology', 'sigma', 'tippy.js']
+  },
+  server: {
+    proxy: {
+      '/scan': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      }
+    }
   }
-};
+});

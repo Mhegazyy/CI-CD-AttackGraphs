@@ -28,13 +28,12 @@ const COMMUNITY_COLORS = [
   "#85144b", "#3D9970", "#01FF70", "#AAAAAA"
 ];
 
-// Helper to pick a color from the array based on community
+// Helper to pick a color from the array based on community index.
 function getCommunityColor(community) {
-  // For large graphs with many communities, you might want a bigger palette or a color generator
   return COMMUNITY_COLORS[community % COMMUNITY_COLORS.length];
 }
 
-// Convert pointer to graph coordinates, then pick node by graph distance
+// Convert pointer coordinates to graph coordinates.
 function pickNodeAtGraphCoords(renderer, graph, pointerGraphPos, threshold = 15) {
   let pickedNode = null;
   let minDistance = Infinity;
@@ -53,22 +52,24 @@ function pickNodeAtGraphCoords(renderer, graph, pointerGraphPos, threshold = 15)
 fetch('/scan/3/latest')
   .then(response => response.json())
   .then(data => {
+    if (!data.attack_graph) {
+      document.getElementById('container').innerHTML = "<p>No attack graph available.</p>";
+      return;
+    }
+
     const graph = new Graph();
     const nodeMap = new Map();
     const edges = [];
 
-    // Process nodes
+    // Process nodes – force size = 10 for all nodes.
     const nodes = data.attack_graph.nodes.map(node => {
       let key, attributes;
       const x = (node.x !== undefined && !isNaN(node.x)) ? node.x : Math.random() * 100;
       const y = (node.y !== undefined && !isNaN(node.y)) ? node.y : Math.random() * 100;
+      const size = 30;
       
-      // We’ll force size=10 for all nodes:
-      const size = 10;
-
-      // For external functions or other classification, we might set different properties, but size is always 10.
+      // For external functions try to merge with existing function nodes by label.
       if (node.type === "external_function") {
-        // Attempt to merge with existing function node by label
         const simpleLabel = node.label.split('.').pop();
         const foundKey = [...nodeMap.values()].find(k => {
           try {
@@ -88,7 +89,7 @@ fetch('/scan/3/latest')
           attributes = {
             ...node,
             x, y,
-            color: "#666",   // default color for external (will be overridden by community color)
+            color: "#666",
             size,
             nodeCategory: node.type,
             type: "nodeCircle"
@@ -99,18 +100,17 @@ fetch('/scan/3/latest')
         attributes = {
           ...node,
           x, y,
-          color: "#0074D9", // default color (overridden by community color)
+          color: "#0074D9",
           size,
           nodeCategory: node.type,
           type: "nodeCircle"
         };
       }
-
       nodeMap.set(node.id, key);
       return { key, attributes };
     }).filter(n => n.attributes && Object.keys(n.attributes).length > 0);
-
-    // Process edges with semi-transparent colors
+    
+    // Process edges with semi-transparent colors.
     data.attack_graph.links?.forEach(link => {
       const source = nodeMap.get(link.source);
       const target = nodeMap.get(link.target);
@@ -120,16 +120,15 @@ fetch('/scan/3/latest')
           target,
           attributes: {
             type: "arrow",
-            // Attack path => red, else semi-transparent gray
             color: link.attack_path ? "rgba(255,0,0,0.6)" : "rgba(59, 59, 59, 0.69)",
-            size: 2,
+            size: 5,
             arrowSize: 8
           }
         });
       }
     });
-
-    // Import nodes & edges
+    
+    // Batch import nodes and edges.
     graph.import({
       nodes: nodes.map(({ key, attributes }) => ({ key, attributes })),
       edges: edges.map(edge => ({
@@ -138,30 +137,29 @@ fetch('/scan/3/latest')
         attributes: edge.attributes
       }))
     });
-
-    // 1) Community detection with Louvain
+    
+    // 1) Community detection using Louvain.
     const partition = louvain(graph);
-    // Assign a color per community
     graph.forEachNode(node => {
       const community = partition[node] || 0;
       graph.setNodeAttribute(node, 'color', getCommunityColor(community));
     });
-
-    // 2) ForceAtlas2 layout
+    
+    // 2) Apply ForceAtlas2 layout for grouping.
     forceAtlas2.assign(graph, {
       iterations: 600,
       settings: {
         strongGravityMode: true,
-        gravity: 2.0,
+        gravity: 4.0,
         scalingRatio: 4.0,
         adjustSizes: true
       }
     });
-
-    // 3) No-overlap pass
-    noverlap.assign(graph, { margin: 5, gridSize: 50 });
-
-    // 4) Initialize Sigma
+    
+    // 3) Apply noverlap layout.
+    // noverlap.assign(graph, { margin: 5, gridSize: 50 });
+    
+    // 4) Initialize Sigma renderer.
     const container = document.getElementById('container');
     container.style.touchAction = "none";
     const renderer = new Sigma(graph, container, {
@@ -172,87 +170,128 @@ fetch('/scan/3/latest')
         labelThreshold: 16,
       },
       nodeProgramClasses: {
-        nodeCircle: NodeCircleProgram
+        nodeCircle: NodeCircleProgram,
       }
     });
 
-    // Enhanced tooltip
+    // Enhanced tooltip using Tippy.js.
     renderer.on('enterNode', ({ node }) => {
       const attr = graph.getNodeAttributes(node);
-      const vuls = (attr.vulnerabilities || [])
-        .map(v => `${v.check_id} (${v.severity})`)
-        .join('<br>');
-      tooltip.innerHTML = `
-        <strong>${attr.label}</strong>
-        <div style="margin-top:6px;color:#aaa">
-          ${attr.nodeCategory === 'external' ? 'External' : 'Internal'} ${attr.nodeCategory}
-        </div>
-        ${attr.filepath ? `<div>📄 ${attr.filepath}</div>` : ''}
-        ${attr.lineno ? `<div>📏 Lines ${attr.lineno}-${attr.end_lineno}</div>` : ''}
-        ${vuls ? `<div style="margin-top:8px;color:${attr.color}">⚠️ ${vuls}</div>` : ''}
-      `;
-      tooltip.style.display = 'block';
+      let content = `<strong>${attr.label}</strong><br>`;
+      content += `<strong>File:</strong> ${attr.filepath}<br>`;
+      if (attr.vulnerabilities && attr.vulnerabilities.length > 0) {
+        content += `<strong>Vulnerabilities:</strong><br>`;
+        attr.vulnerabilities.forEach(vuln => {
+          content += `<em>${vuln.message}</em> (Severity: ${vuln.severity})<br>`;
+        });
+      }
+      tippy(document.body, {
+        content,
+        allowHTML: true,
+        interactive: true,
+        placement: 'top',
+        trigger: 'manual',
+        animation: 'scale',
+        theme: 'light-border'
+      }).show();
     });
     renderer.on('leaveNode', () => {
-      tooltip.style.display = 'none';
+      // Let tooltips auto-dismiss on mouse leave
     });
     container.addEventListener('mousemove', event => {
       tooltip.style.left = event.pageX + 10 + 'px';
       tooltip.style.top = event.pageY + 10 + 'px';
     });
 
-    // 5) Pan or drag logic
+    // --- INTERACTIVE DRILL-DOWN (EXPAND/COLLAPSE) ---
+    // This section assumes that some nodes have a "children" property, which is an array
+    // of detailed child nodes. On clicking an expandable node, we toggle expansion.
+    renderer.on('clickNode', ({ node }) => {
+      const attr = graph.getNodeAttributes(node);
+      if (!attr.children || attr.children.length === 0) return;
+      if (!attr.expanded) {
+        console.log(`Expanding node ${node}`);
+        graph.setNodeAttribute(node, 'expanded', true);
+        // For each child in the children array, add a new node and edge.
+        attr.children.forEach((child, index) => {
+          const childKey = `${node}::${child.id}`;
+          const offset = (index + 1) * 20;
+          const childX = attr.x + offset;
+          const childY = attr.y + offset;
+          graph.addNode(childKey, Object.assign({}, child, {
+            x: childX,
+            y: childY,
+            size: 30,  // Force size 10
+            type: 'nodeCircle',
+            nodeCategory: child.type
+          }));
+          graph.addEdge(node, childKey, {
+            type: 'has_child',
+            color: 'rgba(102,102,102,0.2)',
+            size: 1,
+            arrowSize: 6
+          });
+        });
+        renderer.refresh();
+      } else {
+        console.log(`Collapsing node ${node}`);
+        graph.forEachNode(n => {
+          if (n.startsWith(`${node}::`)) {
+            graph.dropNode(n);
+          }
+        });
+        graph.setNodeAttribute(node, 'expanded', false);
+        renderer.refresh();
+      }
+    });
+    // --- END DRILL-DOWN ---
+
+    // --- NODE DRAGGING AND CAMERA PANNING ---
     let dragState = null;
     let panState = null;
-    // If we pick a node, we drag that node. Otherwise, we pan the camera.
     container.addEventListener('pointerdown', event => {
       event.preventDefault();
       const rect = container.getBoundingClientRect();
-      // Convert pointer to graph coords
-      const pointerGraphPos = renderer.viewportToGraph({
+      const pointer = renderer.viewportToGraph({
         x: event.clientX - rect.left,
         y: event.clientY - rect.top,
       });
-      // Try picking a node within threshold 15
-      const picked = pickNodeAtGraphCoords(graph, pointerGraphPos, 15);
+      const picked = pickNodeAtGraphCoords(renderer, graph, pointer, 15);
       if (picked) {
         dragState = {
           node: picked,
           nodeX: graph.getNodeAttribute(picked, 'x'),
           nodeY: graph.getNodeAttribute(picked, 'y'),
-          pointerX: pointerGraphPos.x,
-          pointerY: pointerGraphPos.y
+          pointerX: pointer.x,
+          pointerY: pointer.y
         };
       } else {
-        // Start camera panning
         const camera = renderer.getCamera();
         panState = {
           cameraX: camera.x,
           cameraY: camera.y,
-          pointerX: pointerGraphPos.x,
-          pointerY: pointerGraphPos.y
+          pointerX: pointer.x,
+          pointerY: pointer.y
         };
       }
     });
     container.addEventListener('pointermove', event => {
       event.preventDefault();
       const rect = container.getBoundingClientRect();
-      const pointerGraphPos = renderer.viewportToGraph({
+      const pointer = renderer.viewportToGraph({
         x: event.clientX - rect.left,
         y: event.clientY - rect.top,
       });
       if (dragState) {
-        // Node dragging
-        const dx = pointerGraphPos.x - dragState.pointerX;
-        const dy = pointerGraphPos.y - dragState.pointerY;
+        const dx = pointer.x - dragState.pointerX;
+        const dy = pointer.y - dragState.pointerY;
         graph.setNodeAttribute(dragState.node, 'x', dragState.nodeX + dx);
         graph.setNodeAttribute(dragState.node, 'y', dragState.nodeY + dy);
         renderer.refresh();
       } else if (panState) {
-        // Camera panning
+        const dx = pointer.x - panState.pointerX;
+        const dy = pointer.y - panState.pointerY;
         const camera = renderer.getCamera();
-        const dx = pointerGraphPos.x - panState.pointerX;
-        const dy = pointerGraphPos.y - panState.pointerY;
         camera.setState({
           x: panState.cameraX - dx,
           y: panState.cameraY - dy
@@ -265,22 +304,9 @@ fetch('/scan/3/latest')
       panState = null;
     });
 
-    // Helper: pick node by graph distance
-    function pickNodeAtGraphCoords(graph, pointer, threshold) {
-      let pickedNode = null;
-      let minDistance = Infinity;
-      graph.forEachNode((node, attr) => {
-        const dx = attr.x - pointer.x;
-        const dy = attr.y - pointer.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance < threshold && distance < minDistance) {
-          pickedNode = node;
-          minDistance = distance;
-        }
-      });
-      return pickedNode;
-    }
-
     console.log("Attack graph rendered successfully.");
+    console.log("Node count:", graph.order);
+    console.log("Edge count:", graph.size);
+
   })
   .catch(console.error);

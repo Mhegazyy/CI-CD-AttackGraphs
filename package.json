@@ -29,7 +29,9 @@
     "graphology-layout": "^0.6.1",
     "graphology-layout-forceatlas2": "^0.10.1",
     "graphology-layout-noverlap": "^0.4.2",
-    "sigma": "^3.0.1"
+    "graphology-operators": "^1.6.1",
+    "sigma": "^3.0.1",
+    "tippy.js": "^6.3.7"
   },
   "devDependencies": {
     "vite": "^6.2.2"
