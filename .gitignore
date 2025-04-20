@@ -1,5 +1,4 @@
 .env
 /node_modules
-attack_graph.json
 /clones
 /alembic

@@ -10,7 +10,10 @@ export default defineConfig({
     assetsDir: '',
     rollupOptions: {
       input: {
-        index: resolve(__dirname, 'templates/attack_graph.html')
+
+        index: resolve(__dirname, 'templates/index.html'),
+        attack_graph: resolve(__dirname, 'templates/attack_graph.html'),
+        report: resolve(__dirname, 'templates/report.html'),
       },
       output: {
         entryFileNames: '[name].js',

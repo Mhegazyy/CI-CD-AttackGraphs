@@ -1,29 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Attack Graph with Sigma.js</title>
-    <style>
-      #container {
-        width: 100%;
-        height: 600px;
-        border: 1px solid #ccc;
-        position: relative;
-      }
-      /* Tippy tooltip styling */
-      .tippy-box {
-        background: white;
-        border: 1px solid #333;
-        padding: 5px;
-        font-size: 12px;
-        max-width: 250px;
-      }
-    </style>
-  </head>
-  <body>
-    <h1>Attack Graph Visualization with Sigma.js</h1>
-    <div id="container"></div>
-    <!-- Use a module script so Vite can process import statements -->
-     <script type="module" crossorigin src="main.js"></script>
+<head>
+  <meta charset="UTF-8" />
+  <title>Graph — Attack Graph</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <h1>Attack Graph Viewer</h1>
+  </header>
+
+  <nav class="site-nav">
+    <a href="index.html" class="nav-link">Repositories</a>
+  </nav>
+
+  <main class="page page--graph">
+    <h2>Graph for Repo <span id="repo-id"></span></h2>
+    <div id="sigma-container" class="graph-container"></div>
+  </main>
+     <script type="module" crossorigin src="attack_graph.js"></script>
   </body>
 </html>
