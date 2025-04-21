@@ -7,34 +7,22 @@
   <script type="module" src="index.js"></script>
 </head>
 <body>
-  <header class="site-header">
-    <h1>Attack Graph Dashboard</h1>
-  </header>
+  <h1>Repositories</h1>
 
-  <nav class="site-nav">
-    <a href="index.html" class="nav-link">Repositories</a>
-  </nav>
+<form id="add-repo-form">
+  <input name="name" type="text" placeholder="Repository Name" required />
+  <input name="url"  type="url"  placeholder="Repository URL"  required />
+  <button type="submit">Add Repository</button>
+</form>
 
-  <main class="page page--repos">
-    <h2>Your Repositories</h2>
-    <table class="repos-table">
-      <thead>
-        <tr><th>Name</th><th>URL</th><th>Actions</th></tr>
-      </thead>
-      <tbody id="repos-body">
-        <!-- JS will inject rows like:
-          <tr>
-            <td>MyRepo</td>
-            <td>https://github.com/…</td>
-            <td>
-              <button data-scan="1">Scan</button>
-              <a href="graph.html?repo=1">Graph</a>
-              <a href="report.html?repo=1">Report</a>
-            </td>
-          </tr>
-        -->
-      </tbody>
-    </table>
-  </main>
+<table class="repos-table">
+  <thead>
+    <tr><th>Name</th><th>URL</th><th>Actions</th></tr>
+  </thead>
+  <tbody id="repos-body">
+    <!-- rows injected by index.js -->
+  </tbody>
+</table>
+
 </body>
 </html>

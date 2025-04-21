@@ -1,243 +1,58 @@
-// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// import { DirectedGraph } from 'graphology';
-// import forceAtlas2 from 'graphology-layout-forceatlas2';
-// import Sigma from 'sigma';
-// import { NodeCircleProgram, EdgeArrowProgram } from 'sigma/rendering';
-// import tippy from 'tippy.js';
+// templates/attack_graph.js
 
-// /**
-//  * Simple radius–based picker in Sigma v2
-//  */
-// function pickNodeAt(renderer, graph, clientX, clientY, threshold = 15) {
-//   const rect = renderer.getContainer().getBoundingClientRect();
-//   const { x: gx, y: gy } = renderer.viewportToGraph({
-//     x: clientX - rect.left,
-//     y: clientY - rect.top
-//   });
-
-//   let picked = null,
-//     minDist = Infinity;
-//   graph.forEachNode((node, attr) => {
-//     const d = Math.hypot(attr.x - gx, attr.y - gy);
-//     if (d < threshold && d < minDist) {
-//       picked = node;
-//       minDist = d;
-//     }
-//   });
-//   return picked;
-// }
-
-// // ───────────────────────────────────────────────────────────
-// // Tooltip container for Tippy
-// // ───────────────────────────────────────────────────────────
-// const tooltip = document.createElement('div');
-// Object.assign(tooltip.style, {
-//   position: 'absolute',
-//   pointerEvents: 'none',
-//   display: 'none',
-//   background: 'rgba(0,0,0,0.8)',
-//   color: '#fff',
-//   padding: '6px',
-//   borderRadius: '4px',
-//   fontSize: '12px',
-//   maxWidth: '200px'
-// });
-// document.body.appendChild(tooltip);
-
-// // ───────────────────────────────────────────────────────────
-// // Fetch + render attack‑graph
-// // ───────────────────────────────────────────────────────────
-// fetch('/scan/3/latest')
-//   .then(res => res.json())
-//   .then(({ attack_graph }) => {
-//     if (!attack_graph || !Array.isArray(attack_graph.nodes))
-//       throw new Error('Invalid attack_graph format');
-
-//     // Lookup tables
-//     const idToNode = new Map();
-//     attack_graph.nodes.forEach(n => idToNode.set(String(n.id), n));
-
-//     // 1) Graph + file→children map
-//     const graph = new DirectedGraph();
-//     const fileMap = new Map();
-//     attack_graph.nodes
-//       .filter(n => n.type === 'file')
-//       .forEach(file => {
-//         const fileKey = String(file.id);
-//         graph.addNode(fileKey, {
-//           label: file.label,
-//           filepath: file.filepath,
-//           x: Math.random() * 100,
-//           y: Math.random() * 100,
-//           size: 18, // file‑node radius
-//           color: '#0074D9',
-//           nodeCategory: 'file',
-//           type: 'nodeCircle',
-//           _expanded: false
-//         });
-//         const childrenIDs = Array.isArray(file.children)
-//           ? file.children.map(String)
-//           : [];
-//         fileMap.set(fileKey, childrenIDs);
-//       });
-
-//     // 2) functionID → parentFile
-//     const fnToFile = new Map();
-//     for (const [fileKey, childIDs] of fileMap)
-//       childIDs.forEach(fnId => fnToFile.set(fnId, fileKey));
-
-//     // 3) Collapse function→function into file→file edges
-//     const seen = new Set();
-//     attack_graph.links.forEach(link => {
-//       const srcFile = fnToFile.get(String(link.source));
-//       const tgtFile = fnToFile.get(String(link.target));
-//       if (srcFile && tgtFile && srcFile !== tgtFile) {
-//         const eKey = `${srcFile}->${tgtFile}`;
-//         if (!seen.has(eKey)) {
-//           graph.addEdgeWithKey(eKey, srcFile, tgtFile, {
-//             type: 'arrow',
-//             color: 'rgba(150,150,150,0.8)',
-//             size: 2,
-//             arrowSize: 6
-//           });
-//           seen.add(eKey);
-//         }
-//       }
-//     });
-
-//     const baseEdges = new Set(graph.edges()); // preserve core edges
-
-//     // 4) Layout
-//     forceAtlas2.assign(graph, {
-//       iterations: 200,
-//       settings: { gravity: 1, scalingRatio: 4, adjustSizes: true }
-//     });
-
-//     // 5) Sigma init
-//     const container = document.getElementById('container');
-//     container.style.touchAction = 'none';
-//     const renderer = new Sigma(graph, container, {
-//       settings: {
-//         defaultEdgeType: 'arrow',
-//         minArrowSize: 6,
-//         defaultEdgeColor: '#ccc',
-//         defaultNodeColor: '#0074D9',
-//         labelThreshold: 16
-//       },
-//       nodeProgramClasses: { nodeCircle: NodeCircleProgram },
-//       edgeProgramClasses: { arrow: EdgeArrowProgram } // one program covers all
-//     });
-//     renderer.refresh();
-
-//     // 6) Tooltip
-//     renderer.on('enterNode', ({ node }) => {
-//       const a = graph.getNodeAttributes(node);
-//       if (a.nodeCategory !== 'file') return;
-//       tippy(tooltip, {
-//         content: `<strong>${a.label}</strong><br>${a.filepath}`,
-//         allowHTML: true,
-//         placement: 'top',
-//         trigger: 'manual',
-//         theme: 'light-border'
-//       }).show();
-//     });
-//     renderer.on('leaveNode', () => tooltip._tippy?.hide());
-
-//     // 7) Expand / collapse on click
-//     container.addEventListener('click', e => {
-//       const fileKey = pickNodeAt(renderer, graph, e.clientX, e.clientY);
-//       if (!fileKey) return;
-//       const attrs = graph.getNodeAttributes(fileKey);
-//       if (attrs.nodeCategory !== 'file') return;
-
-//       const childIDs = fileMap.get(fileKey) || [];
-//       const childSize = 10; // function‑node radius
-//       const orbit = attrs.size + childSize + 10; // guarantees ≥10 px visible edge
-
-//       if (!attrs._expanded) {
-//         // EXPAND
-//         childIDs.forEach((fnId, i) => {
-//           const fnKey = `${fileKey}::${fnId}`;
-//           if (!graph.hasNode(fnKey)) {
-//             const fn = idToNode.get(fnId) || {};
-//             const angle = (2 * Math.PI * i) / childIDs.length;
-//             graph.addNode(fnKey, {
-//               label: fn.label,
-//               filepath: fn.filepath,
-//               x: attrs.x + Math.cos(angle) * orbit,
-//               y: attrs.y + Math.sin(angle) * orbit,
-//               size: childSize,
-//               color: fn.vulnerable ? '#FF4136' : '#2ECC40',
-//               nodeCategory: 'function',
-//               type: 'nodeCircle'
-//             });
-//             graph.addEdgeWithKey(`${fileKey}->${fnKey}`, fileKey, fnKey, {
-//               type: 'arrow',
-//               color: 'rgba(200,200,200,0.7)',
-//               size: 1,
-//               arrowSize: 4
-//             });
-//           }
-//         });
-
-//         // intra‑file function→function edges
-//         const setIDs = new Set(childIDs);
-//         attack_graph.links.forEach(link => {
-//           const s = String(link.source),
-//             t = String(link.target);
-//           if (setIDs.has(s) && setIDs.has(t)) {
-//             const sKey = `${fileKey}::${s}`;
-//             const tKey = `${fileKey}::${t}`;
-//             const eKey = `${sKey}->${tKey}`;
-//             if (!graph.hasEdge(eKey))
-//               graph.addEdgeWithKey(eKey, sKey, tKey, {
-//                 type: 'arrow',
-//                 color: '#999',
-//                 size: 1,
-//                 arrowSize: 4
-//               });
-//           }
-//         });
-
-//         graph.setNodeAttribute(fileKey, '_expanded', true);
-//         renderer.refresh();
-//       } else {
-//         // COLLAPSE
-//         childIDs.forEach(fnId => {
-//           const fnKey = `${fileKey}::${fnId}`;
-//           if (graph.hasNode(fnKey)) graph.dropNode(fnKey);
-//         });
-//         graph.edges().forEach(eKey => {
-//           if (!baseEdges.has(eKey)) graph.dropEdge(eKey);
-//         });
-//         graph.setNodeAttribute(fileKey, '_expanded', false);
-//         renderer.refresh();
-//       }
-//     });
-
-//     console.log('✅ Attack graph rendered');
-//   })
-//   .catch(console.error);
-
-// ───────────────────────────────────────────────────────────
 import { DirectedGraph } from 'graphology';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import Sigma from 'sigma';
 import { NodeCircleProgram, EdgeArrowProgram } from 'sigma/rendering';
 import tippy from 'tippy.js';
 
-/* -------------------------------------------------- */
-/* Helper: pick node under cursor                     */
-/* -------------------------------------------------- */
-function pickNodeAt(renderer, graph, clientX, clientY, threshold = 15) {
+// ─── 1) Grab the repo ID from ?repo_id=… ─────────────────────
+const params = new URLSearchParams(window.location.search);
+const repoId = params.get('repo_id');
+if (!repoId) {
+  document.body.innerHTML = 
+    '<p style="color:red; padding:1rem;">Error: No repo_id specified in URL.</p>';
+  throw new Error('Missing repo_id');
+}
+
+// ─── 2) Display it in the <span id="repo-id"> ─────────────────
+const titleSpan = document.getElementById('repo-id');
+if (titleSpan) titleSpan.textContent = repoId;
+
+// ─── 3) Prepare the Sigma container ──────────────────────────
+const container = document.getElementById('sigma-container');
+if (!container) {
+  console.error('No element with id="sigma-container" found');
+  throw new Error('Missing sigma-container');
+}
+container.style.touchAction = 'none'; // for drag/zoom on touch
+
+// ─── 4) Tooltip element for tippy.js ─────────────────────────
+const tooltip = document.createElement('div');
+Object.assign(tooltip.style, {
+  position: 'absolute',
+  pointerEvents: 'none',
+  display: 'none',
+  background: 'rgba(0,0,0,0.8)',
+  color: '#fff',
+  padding: '6px 8px',
+  borderRadius: '4px',
+  fontSize: '12px',
+  maxWidth: '200px',
+  zIndex: 9999,
+});
+document.body.appendChild(tooltip);
+
+// ─── 5) Helper to pick nodes under cursor ────────────────────
+function pickNodeAt(renderer, graph, x, y, threshold = 15) {
   const rect = renderer.getContainer().getBoundingClientRect();
   const { x: gx, y: gy } = renderer.viewportToGraph({
-    x: clientX - rect.left,
-    y: clientY - rect.top,
+    x: x - rect.left,
+    y: y - rect.top,
   });
 
   let picked = null,
-    minDist = Infinity;
+      minDist = Infinity;
   graph.forEachNode((node, attr) => {
     const d = Math.hypot(attr.x - gx, attr.y - gy);
     if (d < threshold && d < minDist) {
@@ -248,75 +63,60 @@ function pickNodeAt(renderer, graph, clientX, clientY, threshold = 15) {
   return picked;
 }
 
-/* -------------------------------------------------- */
-/* Off‑DOM tooltip container for tippy.js             */
-/* -------------------------------------------------- */
-const tooltip = document.createElement('div');
-Object.assign(tooltip.style, {
-  position: 'absolute',
-  pointerEvents: 'none',
-  display: 'none',
-  background: 'rgba(0,0,0,0.8)',
-  color: '#fff',
-  padding: '6px',
-  borderRadius: '4px',
-  fontSize: '12px',
-  maxWidth: '200px',
-});
-document.body.appendChild(tooltip);
-
-/* -------------------------------------------------- */
-/* Fetch attack graph and render                      */
-/* -------------------------------------------------- */
-fetch('/scan/3/latest')
-  .then((res) => res.json())
-  .then(({ attack_graph }) => {
-    if (!attack_graph || !Array.isArray(attack_graph.nodes))
+// ─── 6) Fetch & render the attack graph ──────────────────────
+fetch(`/scan/${repoId}/latest`)
+  .then(res => {
+    if (!res.ok) throw new Error(`Scan not found (status ${res.status})`);
+    return res.json();
+  })
+  .then(data => {
+    const attack_graph = data.attack_graph ?? data;
+    if (!attack_graph.nodes || !Array.isArray(attack_graph.nodes))
       throw new Error('Invalid attack_graph format');
 
-    /* --- Build lookup maps --- */
+    // Build lookup
     const idToNode = new Map();
-    attack_graph.nodes.forEach((n) => idToNode.set(String(n.id), n));
+    attack_graph.nodes.forEach(n => idToNode.set(String(n.id), n));
 
-    /* --- 1. Graph + file→children map --- */
+    // 1) File nodes + file→children map
     const graph = new DirectedGraph();
     const fileMap = new Map();
-
     attack_graph.nodes
-      .filter((n) => n.type === 'file')
-      .forEach((file) => {
-        const fileKey = String(file.id);
-        graph.addNode(fileKey, {
+      .filter(n => n.type === 'file')
+      .forEach(file => {
+        const key = String(file.id);
+        graph.addNode(key, {
           label: file.label,
           filepath: file.filepath,
           x: Math.random() * 100,
           y: Math.random() * 100,
-          size: 18, // file radius
+          size: 18,
           color: '#0074D9',
           nodeCategory: 'file',
           type: 'nodeCircle',
           _expanded: false,
         });
-        const childrenIDs = Array.isArray(file.children)
+        const children = Array.isArray(file.children)
           ? file.children.map(String)
           : [];
-        fileMap.set(fileKey, childrenIDs);
+        fileMap.set(key, children);
       });
 
-    /* --- 2. functionID → parentFile map --- */
+    // 2) Map function → parent file
     const fnToFile = new Map();
-    for (const [fileKey, childIDs] of fileMap)
-      childIDs.forEach((fnId) => fnToFile.set(fnId, fileKey));
+    for (const [fileKey, children] of fileMap) {
+      children.forEach(fnId => fnToFile.set(fnId, fileKey));
+    }
 
-    /* --- 3. Collapse function→function into file→file edges --- */
+    // 3) Collapse file→file edges
     const seen = new Set();
-    attack_graph.links.forEach((link) => {
-      const srcFile = fnToFile.get(String(link.source));
-      const tgtFile = fnToFile.get(String(link.target));
-      if (srcFile && tgtFile && srcFile !== tgtFile) {
-        const eKey = `${srcFile}->${tgtFile}`;
+    attack_graph.links.forEach(link => {
+      const srcF = fnToFile.get(String(link.source));
+      const tgtF = fnToFile.get(String(link.target));
+      if (srcF && tgtF && srcF !== tgtF) {
+        const eKey = `${srcF}->${tgtF}`;
         if (!seen.has(eKey)) {
-          graph.addEdgeWithKey(eKey, srcFile, tgtFile, {
+          graph.addEdgeWithKey(eKey, srcF, tgtF, {
             type: 'arrow',
             color: 'rgba(150,150,150,0.8)',
             size: 2,
@@ -327,18 +127,15 @@ fetch('/scan/3/latest')
       }
     });
 
-    const baseEdges = new Set(graph.edges()); // preserve core edges
+    const baseEdges = new Set(graph.edges());
 
-    /* --- 4. Layout --- */
+    // 4) Layout
     forceAtlas2.assign(graph, {
       iterations: 200,
       settings: { gravity: 1, scalingRatio: 4, adjustSizes: true },
     });
 
-    /* --- 5. Sigma init --- */
-    const container = document.getElementById('container');
-    container.style.touchAction = 'none';
-
+    // 5) Sigma init
     const renderer = new Sigma(graph, container, {
       settings: {
         defaultEdgeType: 'arrow',
@@ -348,16 +145,16 @@ fetch('/scan/3/latest')
         labelThreshold: 16,
       },
       nodeProgramClasses: { nodeCircle: NodeCircleProgram },
-      edgeProgramClasses: { arrow: EdgeArrowProgram }, // one program handles all
+      edgeProgramClasses: { arrow: EdgeArrowProgram },
     });
     renderer.refresh();
 
-    /* --- 6. Tooltip --- */
+    // 6) Tooltip on hover
     renderer.on('enterNode', ({ node }) => {
       const a = graph.getNodeAttributes(node);
       if (a.nodeCategory !== 'file') return;
       tippy(tooltip, {
-        content: `<strong>${a.label}</strong><br>${a.filepath}`,
+        content: `<strong>${a.label}</strong><br><small>${a.filepath}</small>`,
         allowHTML: true,
         placement: 'top',
         trigger: 'manual',
@@ -366,76 +163,74 @@ fetch('/scan/3/latest')
     });
     renderer.on('leaveNode', () => tooltip._tippy?.hide());
 
-    /* --------------------------------------------------
-       7. Expand / collapse on click
-       -------------------------------------------------- */
-    container.addEventListener('click', (e) => {
+    // 7) Expand / collapse
+    container.addEventListener('click', e => {
       const fileKey = pickNodeAt(renderer, graph, e.clientX, e.clientY);
       if (!fileKey) return;
       const attrs = graph.getNodeAttributes(fileKey);
       if (attrs.nodeCategory !== 'file') return;
 
-      const childIDs = fileMap.get(fileKey) || [];
-      const childSize = 10; // radius of function nodes
-      const orbit = attrs.size + childSize + 14; // ≥14 px visible edge
+      const children = fileMap.get(fileKey) || [];
+      const childSize = 10;
+      const orbit = attrs.size + childSize + 14;
 
       if (!attrs._expanded) {
-        /* ---------- EXPAND ---------- */
-        childIDs.forEach((fnId, i) => {
+        // EXPAND
+        children.forEach((fnId, idx) => {
           const fnKey = `${fileKey}::${fnId}`;
-          if (graph.hasNode(fnKey)) return; // already added
+          if (graph.hasNode(fnKey)) return;
 
-          const fnMeta = idToNode.get(fnId) || {};
-          const angle = (2 * Math.PI * i) / childIDs.length;
+          const meta = idToNode.get(fnId) || {};
+          const angle = (2 * Math.PI * idx) / children.length;
 
           graph.addNode(fnKey, {
-            label: fnMeta.label,
-            filepath: fnMeta.filepath,
+            label: meta.label,
+            filepath: meta.filepath,
             x: attrs.x + Math.cos(angle) * orbit,
             y: attrs.y + Math.sin(angle) * orbit,
             size: childSize,
-            color: fnMeta.vulnerable ? '#FF4136' : '#2ECC40',
+            color: meta.vulnerable ? '#FF4136' : '#2ECC40',
             nodeCategory: 'function',
             type: 'nodeCircle',
           });
 
-          // parent → child spoke (long enough & bright)
-          graph.addEdgeWithKey(`${fileKey}->${fnKey}`, fileKey, fnKey, {
-            type: 'arrow',
-            color: '#FF851B',
-            size: 2,
-            arrowSize: 8,
-          });
+          graph.addEdgeWithKey(
+            `${fileKey}->${fnKey}`,
+            fileKey,
+            fnKey,
+            { type: 'arrow', color: '#FF851B', size: 2, arrowSize: 8 }
+          );
         });
 
-        /* ---- intra‑file function→function edges ---- */
-        const setIDs = new Set(childIDs);
-        attack_graph.links.forEach((link) => {
+        // function→function edges in same file
+        const setIDs = new Set(children);
+        attack_graph.links.forEach(link => {
           const s = String(link.source),
-            t = String(link.target);
+                t = String(link.target);
           if (setIDs.has(s) && setIDs.has(t)) {
             const sKey = `${fileKey}::${s}`;
             const tKey = `${fileKey}::${t}`;
             const eKey = `${sKey}->${tKey}`;
-            if (!graph.hasEdge(eKey))
+            if (!graph.hasEdge(eKey)) {
               graph.addEdgeWithKey(eKey, sKey, tKey, {
                 type: 'arrow',
                 color: '#999',
                 size: 1,
                 arrowSize: 4,
               });
+            }
           }
         });
 
         graph.setNodeAttribute(fileKey, '_expanded', true);
         renderer.refresh();
       } else {
-        /* ---------- COLLAPSE ---------- */
-        childIDs.forEach((fnId) => {
+        // COLLAPSE
+        children.forEach(fnId => {
           const fnKey = `${fileKey}::${fnId}`;
           if (graph.hasNode(fnKey)) graph.dropNode(fnKey);
         });
-        graph.edges().forEach((eKey) => {
+        graph.edges().forEach(eKey => {
           if (!baseEdges.has(eKey)) graph.dropEdge(eKey);
         });
         graph.setNodeAttribute(fileKey, '_expanded', false);
@@ -443,6 +238,9 @@ fetch('/scan/3/latest')
       }
     });
 
-    console.log('✅ Attack graph rendered');
+    console.log(`✅ Attack graph for repo ${repoId} rendered`);
   })
-  .catch(console.error);
+  .catch(err => {
+    console.error(err);
+    container.innerHTML = `<p style="color:red; padding:1rem;">${err.message}</p>`;
+  });

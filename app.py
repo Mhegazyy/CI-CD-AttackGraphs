@@ -1,11 +1,62 @@
 from flask import Flask, request, jsonify, render_template, redirect, url_for, send_from_directory
+from apscheduler.schedulers.background import BackgroundScheduler
+import os
+import datetime
 import threading
+import subprocess
 from models import Session, Repository, Scan
-from main import scan_repository  # Ensure scan_repository is correctly defined in main.py
+from main import scan_repository, update_repo, clone_repo  # Ensure scan_repository is correctly defined in main.py
+from add_repo import add_repository 
+from flask_cors import CORS
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
-app = Flask(__name__, static_folder='app/src/js', template_folder='templates')
+CORS(app, origins="http://localhost:5173")
 
+def poll_repositories():
+    session = Session()
+    repos = session.query(Repository).all()
+    for repo in repos:
+        try:
+            # 1. Ensure a local clone exists
+            if repo.local_path and os.path.isdir(repo.local_path):
+                # fetch remote updates
+                subprocess.run(
+                    ["git", "-C", repo.local_path, "fetch"],
+                    check=True, capture_output=True
+                )
+            else:
+                # clone if missing
+                repo.local_path = clone_repo(repo.repo_url)
+                session.commit()
+
+            # 2. Get the latest remote commit on default branch
+            out = subprocess.check_output(
+                ["git", "-C", repo.local_path, "rev-parse", "origin/HEAD"]
+            ).strip().decode()
+
+            # 3. Compare & trigger
+            if repo.last_commit != out:
+                repo.last_commit = out
+                session.commit()
+                # trigger a background scan
+                threading.Thread(
+                  target=lambda rid=repo.id: scan_repository(rid),
+                  daemon=True
+                ).start()
+
+        except Exception as e:
+            app.logger.error(f"Polling {repo.name} failed: {e}")
+    session.close()
+
+# 4. Schedule the job
+scheduler = BackgroundScheduler()
+scheduler.add_job(
+    func=poll_repositories,
+    trigger="interval",
+    minutes=10,     # adjust to taste
+    next_run_time=datetime.datetime.now()  # start immediately on launch
+)
+scheduler.start()
 @app.route('/')
 def index():
     # Serve the built index.html from static/dist
@@ -33,25 +84,40 @@ def get_latest_scan(repo_id):
         return jsonify({"error": "No scan found for this repository"}), 404
     return jsonify(scan.scan_results)
 
-@app.route('/add_repo', methods=['POST'])
-def add_repo():
-    repo_url = request.form.get('repo_url')
-    repo_name = request.form.get('name')
-    if not repo_url or not repo_name:
-        return "Repository name and URL are required", 400
-    
-    session = Session()
-    # Check if repository already exists
-    existing_repo = session.query(Repository).filter_by(repo_url=repo_url).first()
-    if existing_repo:
-        session.close()
-        return redirect(url_for('index'))
-    
-    new_repo = Repository(name=repo_name, repo_url=repo_url)
-    session.add(new_repo)
-    session.commit()
-    session.close()
-    return redirect(url_for('index'))
+@app.route("/repos", methods=["GET"])
+def list_repos():
+    with Session() as session:
+        repos = session.query(Repository).all()
+        result = [
+            {"id": r.id, "name": r.name, "url": r.repo_url}
+            for r in repos
+        ]
+    return jsonify(result), 200
+
+@app.route("/repos", methods=["POST"])
+def create_repo():
+    data = request.get_json(force=True)
+    name     = data.get("name")
+    repo_url = data.get("repo_url")
+    if not name or not repo_url:
+        return jsonify({"error": "name and repo_url are required"}), 400
+
+    # Delegate to your existing function
+    try:
+        new_repo = add_repository(name, repo_url)
+    except Exception as e:
+        # e.g. clone failure or DB error
+        return jsonify({"error": str(e)}), 500
+
+    # add_repository returns the SQLAlchemy model instance;
+    # pull out the fields you want to return as JSON:
+    return jsonify({
+        "id":         new_repo.id,
+        "name":       new_repo.name,
+        "url":        new_repo.repo_url,
+        "local_path": new_repo.local_path
+    }), 201
+
 
 @app.route('/scan/<int:repo_id>', methods=['POST'])
 def scan_repo(repo_id):

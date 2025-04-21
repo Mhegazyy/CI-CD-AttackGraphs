@@ -13,6 +13,7 @@ class Repository(Base):
     local_path = Column(String)
     branch = Column(String, default="main")
     last_scanned = Column(DateTime)
+    last_commit = Column(String, nullable=True)
 
 class Scan(Base):
     __tablename__ = "scans"
