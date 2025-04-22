@@ -162,7 +162,10 @@
 
 //     renderer.refresh();
 
-//     // 6) Rich tooltip on hover (any node)
+//     // 6) Rich tooltip on hoveimport 'tippy.js/dist/tippy.css';          // core styles
+// import 'tippy.js/dist/svg-arrow.css';      // if you use SVG arrows
+// import 'tippy.js/themes/light-border.css'; // bring in a built‑in theme (optional)
+// import './your-custom-tippy.css';          // *then* your overridesr (any node)
 //     renderer.on('enterNode', ({ node }) => {
 //       const a = graph.getNodeAttributes(node);
 //       // build table of attributes
@@ -265,12 +268,17 @@
 
 // templates/attack_graph.js
 
+// templates/attack_graph.js
+
 import { DirectedGraph } from 'graphology';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import noverlap from 'graphology-layout-noverlap';
 import Sigma from 'sigma';
 import { NodeCircleProgram, EdgeArrowProgram } from 'sigma/rendering';
 import tippy from 'tippy.js';
+import 'tippy.js/dist/tippy.css';          // core styles
+import 'tippy.js/dist/svg-arrow.css';      // SVG arrow (optional)
+import 'tippy.js/themes/light-border.css'; // built‑in theme (optional)
 
 // ─── 1) Grab the repo ID from ?repo_id=… ─────────────────────
 const params = new URLSearchParams(window.location.search);
@@ -423,22 +431,55 @@ fetch(`/scan/${repoId}/latest`)
     });
     renderer.refresh();
 
-    // 7) Rich tooltip on hover
+    // 7) Rich tooltip on hover, positioned at node
     renderer.on('enterNode', ({ node }) => {
       const a = graph.getNodeAttributes(node);
+      // Build rows for table
       const rows = Object.entries(a)
-        .map(([k, v]) =>
-          `<tr><th style="text-align:left;padding:2px 4px">${k}</th>` +
-          `<td style="padding:2px 4px">${v}</td></tr>`
+        .map(
+          ([k, v]) =>
+            `<tr>
+               <th style="text-align:left;padding:2px 4px">${k}</th>
+               <td style="padding:2px 4px">${v}</td>
+             </tr>`
         )
         .join('');
+
+      // Compute the node's pixel position within the container
+      const vp = renderer.graphToViewport({ x: a.x, y: a.y });
+      const rect = container.getBoundingClientRect();
+      const referenceRect = {
+        width: 0,
+        height: 0,
+        top: rect.top + vp.y,
+        bottom: rect.top + vp.y,
+        left: rect.left + vp.x,
+        right: rect.left + vp.x,
+      };
+
       tippy(tooltip, {
         content: `<strong>${a.label}</strong><table>${rows}</table>`,
         allowHTML: true,
         interactive: true,
         trigger: 'manual',
-        placement: 'top',
-        theme: 'light-border',
+        placement: 'right',
+        animation: 'shift-away',
+        arrow: true,
+        offset: [0, 8],
+        theme: 'custom',
+        getReferenceClientRect: () => referenceRect,
+        popperOptions: {
+          modifiers: [
+            {
+              name: 'preventOverflow',
+              options: { padding: 8 },
+            },
+            {
+              name: 'flip',
+              options: { fallbackPlacements: ['right', 'bottom', 'top'] },
+            },
+          ],
+        },
       }).show();
     });
     renderer.on('leaveNode', () => tooltip._tippy?.hide());
@@ -483,11 +524,11 @@ fetch(`/scan/${repoId}/latest`)
         const setIDs = new Set(children);
         attack_graph.links.forEach(link => {
           const s = String(link.source),
-                t = String(link.target);
+            t = String(link.target);
           if (setIDs.has(s) && setIDs.has(t)) {
             const sKey = `${fileKey}::${s}`,
-                  tKey = `${fileKey}::${t}`,
-                  eKey = `${sKey}->${tKey}`;
+              tKey = `${fileKey}::${t}`,
+              eKey = `${sKey}->${tKey}`;
             if (!graph.hasEdge(eKey)) {
               graph.addEdgeWithKey(eKey, sKey, tKey, {
                 type: 'arrow',
@@ -529,4 +570,3 @@ fetch(`/scan/${repoId}/latest`)
     container.innerHTML =
       `<p style="color:red; padding:1rem;">${err.message}</p>`;
   });
-

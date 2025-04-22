@@ -1,4 +1,4 @@
-import"./modulepreload-polyfill.js";/* empty css      */const i="http://localhost:5000";async function o(a,n={}){const t=await fetch(`${i}${a}`,{headers:{"Content-Type":"application/json"},...n});if(!t.ok){const e=await t.text();throw new Error(e||t.statusText)}return t.json()}async function d(){const a=await o("/repos"),n=document.getElementById("repos-body");n.innerHTML=a.map(t=>`
+import"./styles.js";const i="http://localhost:5000";async function o(a,n={}){const t=await fetch(`${i}${a}`,{headers:{"Content-Type":"application/json"},...n});if(!t.ok){const e=await t.text();throw new Error(e||t.statusText)}return t.json()}async function d(){const a=await o("/repos"),n=document.getElementById("repos-body");n.innerHTML=a.map(t=>`
     <tr>
       <td>${t.name}</td>
       <td><a href="${t.url}" target="_blank">${t.url}</a></td>
