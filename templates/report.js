@@ -1,6 +1,6 @@
-// templates/report.js
+// templates/report.js   ── UPDATED
 
-// 1) Grab repo_id
+// 1) Grab repo_id (unchanged)
 const params = new URLSearchParams(window.location.search);
 const repoId = params.get('repo_id');
 if (!repoId) {
@@ -9,11 +9,11 @@ if (!repoId) {
   throw new Error('Missing repo_id');
 }
 
-// 2) Fix “View Graph” nav link
+// 2) Fix “View Graph” nav link (unchanged)
 const graphLink = document.querySelector('a[data-repo-link]');
 if (graphLink) graphLink.href = `attack_graph.html?repo_id=${repoId}`;
 
-// 3) Fetch the latest scan
+// 3) Fetch the latest scan (unchanged)
 fetch(`/scan/${repoId}/latest`)
   .then(r => {
     if (!r.ok) throw new Error(`Scan not found (status ${r.status})`);
@@ -25,7 +25,14 @@ fetch(`/scan/${repoId}/latest`)
       `<p class="error">${err.message}</p>`;
   });
 
-// 4) Helper to title‑case keys
+
+  function qualitative(score = 0) {
+    if (score >= 0.67) return 'High';     // upper third
+    if (score >= 0.34) return 'Medium';   // middle third
+    return 'Low';                         // lower third
+  }
+
+// 4) Helper to title-case keys (unchanged)
 function formatKey(key) {
   return key
     .replace(/([A-Z])/g, ' $1')
@@ -53,12 +60,12 @@ function renderReport(report) {
     h2.textContent = 'AI Impact Assessment';
     section.appendChild(h2);
 
-    // Overall Risk
+    // Overall Risk (string already qualitative)
     const pRisk = document.createElement('p');
     pRisk.innerHTML = `<strong>Overall Risk:</strong> ${ia.overall_risk}`;
     section.appendChild(pRisk);
 
-    // Critical Attack Paths
+    // Critical Attack Paths (unchanged)
     if (Array.isArray(ia.critical_attack_paths)) {
       const h3 = document.createElement('h3');
       h3.textContent = 'Critical Attack Paths';
@@ -96,12 +103,18 @@ function renderReport(report) {
       const tbody = document.createElement('tbody');
       ia.functions_analysis.forEach(f => {
         const tr = document.createElement('tr');
-        const vulnTexts = f.vulnerabilities.map(v => v.message).join('; ') || 'None';
+
+        // 🔑 If the AI already returns qualitative text we leave it;
+        //    if it’s numeric, map it with qualitative()
+        const risk     = isFinite(f.risk_rating)   ? qualitative(+f.risk_rating)   : f.risk_rating;
+        const impact   = isFinite(f.impact_rating) ? qualitative(+f.impact_rating) : f.impact_rating;
+        const vulnText = (f.vulnerabilities?.map(v => v.message).join('; ')) || 'None';
+
         tr.innerHTML = `
           <td>${f.function_id}</td>
-          <td>${f.risk_rating}</td>
-          <td>${f.impact_rating}</td>
-          <td>${vulnTexts}</td>
+          <td>${risk}</td>
+          <td>${impact}</td>
+          <td>${vulnText}</td>
           <td>${f.recommendation}</td>
         `;
         tbody.appendChild(tr);
@@ -113,7 +126,7 @@ function renderReport(report) {
     container.appendChild(section);
   }
 
-  // 5b) Render any other top‑level sections
+  // 5b) Render any other top-level sections (unchanged)
   const skip = new Set(['ai_assessment', 'attack_graph']);
   Object.entries(report).forEach(([key, value]) => {
     if (skip.has(key)) return;

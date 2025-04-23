@@ -131,7 +131,7 @@ def scan_repo(repo_id):
     # Run the scanning process in a background thread.
     # scan_repository should handle updating the repository and storing scan results in the DB.
     def run_scan():
-        scan_repository(repo.repo_url)
+        scan_repository(repo.id)
         # Optionally, update repo.last_scanned or perform further DB updates.
     
     threading.Thread(target=run_scan).start()

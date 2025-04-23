@@ -140,9 +140,9 @@ def build_attack_graph(semgrep_results, ast_data):
     return data
 
 if __name__ == "__main__":
-    dummy_semgrep_results = run_semgrep("clones/dvpwa")
+    dummy_semgrep_results = run_semgrep("clones/vulnpy")
     from ast_analyzer import analyze_code
-    ast_data = analyze_code("clones/dvpwa")
+    ast_data = analyze_code("clones/vulnpy")
     
     graph = build_attack_graph(dummy_semgrep_results, ast_data)
     
