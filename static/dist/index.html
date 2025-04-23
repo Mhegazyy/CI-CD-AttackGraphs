@@ -7,23 +7,33 @@
   <link rel="modulepreload" crossorigin href="./styles.js">
   <link rel="stylesheet" crossorigin href="./styles.css">
 </head>
+
 <body>
   <h1>Repositories</h1>
 
-<form id="add-repo-form">
-  <input name="name" type="text" placeholder="Repository Name" required />
-  <input name="url"  type="url"  placeholder="Repository URL"  required />
-  <button type="submit">Add Repository</button>
-</form>
+  <!-- ───────────────── Add-repo form ───────────────── -->
+  <form id="add-repo-form">
+    <input name="name" type="text" placeholder="Repository Name" required />
+    <input name="url"  type="url"  placeholder="Repository URL"  required />
+    <button type="submit">Add Repository</button>
+  </form>
 
-<table class="repos-table">
-  <thead>
-    <tr><th>Name</th><th>URL</th><th>Actions</th></tr>
-  </thead>
-  <tbody id="repos-body">
-    <!-- rows injected by index.js -->
-  </tbody>
-</table>
+  <!-- ──────────────── NEW: status graphics ──────────────── -->
+  <!-- 1️⃣  Indeterminate spinner shown while any network request is in-flight -->
+  <div id="loader" class="spinner hidden"></div>
 
+  <!-- 2️⃣  Success check-mark shown when the scan list refresh completes -->
+  <div id="scan-done" class="checkmark hidden"></div>
+  <!-- ─────────────────────────────────────────────────────── -->
+
+  <!-- ───────────────── Repo table ───────────────── -->
+  <table class="repos-table">
+    <thead>
+      <tr><th>Name</th><th>URL</th><th>Actions</th></tr>
+    </thead>
+    <tbody id="repos-body">
+      <!-- rows injected by index.js -->
+    </tbody>
+  </table>
 </body>
 </html>
